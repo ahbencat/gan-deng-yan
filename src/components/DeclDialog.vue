@@ -43,6 +43,8 @@ const chosen = ref(0)
   border-radius: 12px;
   padding: 22px;
   width: 320px;
+  max-height: 86vh;
+  overflow: auto;
 }
 h3 {
   margin: 0 0 14px;

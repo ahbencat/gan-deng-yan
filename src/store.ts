@@ -188,13 +188,16 @@ function handleMessage(env: Envelope): void {
     }
     case 'room.state': {
       store.room = env.payload as RoomState
-      // 对局开始时 room.state(playing) 先到，game.state 会把 phase 切到 game
       if (store.room.status === 'closed') {
         store.room = null
         store.game = null
         store.phase = 'lobby'
         send('lobby.list', {})
+        return
       }
+      // 大厅中建房/加入成功 → 进房间；对局开始时 room.state(playing) 先到，
+      // 若已在 game phase 则不动，由 game.state 完成切换
+      if (store.phase === 'lobby') store.phase = 'room'
       return
     }
     case 'room.closed': {
