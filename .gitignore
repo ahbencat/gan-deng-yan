@@ -1,0 +1,24 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# 运行时数据与临时实验目录（SQLite、.secret 等不入库）
+data
+temp
+.secret
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# 备份文件（全局约定，永不入库）
+*.bak
+*.bak.*
