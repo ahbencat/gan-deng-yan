@@ -32,7 +32,7 @@ function logText(e: TrickLogEntry): string {
 
 const recentLog = computed(() => props.trick.log.slice(-7).reverse())
 
-// 总时长倒计时
+// 本场剩余倒计时（endsAt = 本场截止时刻）
 const tick = ref(serverNow())
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -56,7 +56,7 @@ const totalText = computed(() => {
     <div class="topbar">
       <span class="stat">牌堆 <b>{{ pileCount }}</b> 张</span>
       <span class="stat" :class="{ hot: multiplier > 1 }">倍率 <b>×{{ multiplier }}</b></span>
-      <span class="stat">总时长 <b>{{ totalText }}</b></span>
+      <span class="stat">本场剩余 <b>{{ totalText }}</b></span>
       <span v-if="bombHistory.length" class="stat bombs">
         炸弹：
         <em v-for="(b, i) in bombHistory" :key="i">

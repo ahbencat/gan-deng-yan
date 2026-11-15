@@ -28,6 +28,11 @@ export interface Room {
   players: Map<number, RoomPlayer>
   lastResult: GameResult | null
   session: GameSession | null
+  /** 本场截止时刻（绝对 ms）；null=未开局/本场已结束 */
+  sessionEndsAt: number | null
+  /** 自动开局下一局的时刻；局间等待期非 null */
+  nextGameAt: number | null
+  nextGameTimer: ReturnType<typeof setTimeout> | null
 }
 
 /** 校验并归一化房间配置；非法返回 null */
@@ -105,6 +110,8 @@ class RoomManager {
       config: room.config,
       players,
       lastResult: room.lastResult,
+      sessionEndsAt: room.sessionEndsAt,
+      nextGameAt: room.nextGameAt,
     }
   }
 
@@ -141,6 +148,9 @@ class RoomManager {
       ]),
       lastResult: null,
       session: null,
+      sessionEndsAt: null,
+      nextGameAt: null,
+      nextGameTimer: null,
     }
     this.rooms.set(room, newRoom)
     return newRoom
@@ -271,6 +281,11 @@ class RoomManager {
     room.status = 'closed'
     room.session?.dispose()
     room.session = null
+    if (room.nextGameTimer) {
+      clearTimeout(room.nextGameTimer)
+      room.nextGameTimer = null
+    }
+    room.nextGameAt = null
     db.prepare(`UPDATE rooms SET status = 'closed', updated_at = ? WHERE id = ?`).run(
       Date.now(),
       roomId,
@@ -290,6 +305,7 @@ class RoomManager {
       status: string
       config_json: string
       last_result_json: string | null
+      session_ends_at?: number | null
     },
     players: RoomPlayer[],
   ): void {
@@ -302,12 +318,29 @@ class RoomManager {
       players: new Map(players.map((p) => [p.userId, p])),
       lastResult: row.last_result_json ? (JSON.parse(row.last_result_json) as GameResult) : null,
       session: null,
+      sessionEndsAt: row.session_ends_at ?? null,
+      nextGameAt: null,
+      nextGameTimer: null,
     }
     // 房主不在座（异常）→ 转给座位最小者
     if (!room.players.has(room.hostUserId) && room.players.size > 0) {
       room.hostUserId = [...room.players.values()].sort((a, b) => a.seat - b.seat)[0].userId
     }
     this.rooms.set(room.id, room)
+  }
+
+  /** 全部房间（启动恢复用） */
+  all(): Room[] {
+    return [...this.rooms.values()]
+  }
+
+  /** 持久化本场截止时刻（null=本场结束） */
+  saveSessionEnds(room: Room): void {
+    db.prepare('UPDATE rooms SET session_ends_at = ?, updated_at = ? WHERE id = ?').run(
+      room.sessionEndsAt,
+      Date.now(),
+      room.id,
+    )
   }
 }
 

@@ -34,6 +34,7 @@ db.exec(`
     status TEXT NOT NULL CHECK(status IN ('waiting','playing','closed')),
     config_json TEXT NOT NULL,
     last_result_json TEXT,
+    session_ends_at INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -73,6 +74,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_games_room_status ON games(room_id, status);
   CREATE INDEX IF NOT EXISTS idx_game_players_user ON game_players(user_id);
 `)
+
+// 旧库迁移：本场截止时刻列
+const roomCols = db.prepare('PRAGMA table_info(rooms)').all() as unknown as { name: string }[]
+if (!roomCols.some((c) => c.name === 'session_ends_at')) {
+  db.exec('ALTER TABLE rooms ADD COLUMN session_ends_at INTEGER')
+}
 
 /** 事务助手：失败自动回滚（node:sqlite 同步执行，单线程无竞态） */
 export function tx<T>(fn: () => T): T {

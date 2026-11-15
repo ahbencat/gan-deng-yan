@@ -56,6 +56,7 @@ export interface RoomConfig {
   wildCount: 2 | 3 | 4
   maxPlayers: number // 2..8
   turnSeconds: number // 5..120
+  /** 本场时长（分钟）：首局开局起算的总预算，局间自动连开直到耗尽 */
   gameMinutes: number // 1..60
 }
 
@@ -206,6 +207,10 @@ export interface RoomState {
   config: RoomConfig
   players: RoomPlayerState[]
   lastResult: GameResult | null
+  /** 本场截止时刻（绝对 ms）；null=未开局/本场已结束 */
+  sessionEndsAt: number | null
+  /** 自动开局下一局的时刻（绝对 ms）；局间等待期非 null */
+  nextGameAt: number | null
 }
 
 export interface RoomListEntry {

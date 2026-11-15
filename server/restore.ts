@@ -3,7 +3,8 @@
 import { applyTimeout, settleTimeout } from '../src/game/engine.js'
 import { STATE_VERSION, type GameState } from '../src/types.js'
 import { db } from './db.js'
-import { GameSession } from './gameSession.js'
+import { GameSession, INTERMISSION_MS, scheduleNextGame, startGame } from './gameSession.js'
+import { pushLobby, pushRoomState } from './notify.js'
 import { rooms, type RoomPlayer } from './roomManager.js'
 import { abandonGame, recordGameResult } from './users.js'
 
@@ -13,6 +14,7 @@ interface RoomRow {
   status: string
   config_json: string
   last_result_json: string | null
+  session_ends_at: number | null
 }
 
 interface GameRow {
@@ -27,7 +29,10 @@ export function restoreAll(): void {
 
   // 1. 加载 waiting/playing 房间（连接为空，全员 offline）
   const roomRows = db
-    .prepare(`SELECT id, host_user_id, status, config_json, last_result_json FROM rooms WHERE status IN ('waiting','playing')`)
+    .prepare(
+      `SELECT id, host_user_id, status, config_json, last_result_json, session_ends_at
+       FROM rooms WHERE status IN ('waiting','playing')`,
+    )
     .all() as unknown as RoomRow[]
   const playerStmt = db.prepare(
     `SELECT rp.user_id, rp.seat, u.nickname, u.score
@@ -98,6 +103,7 @@ export function restoreAll(): void {
         db.prepare('UPDATE games SET state_json = ? WHERE id = ?').run(JSON.stringify(state), g.id)
         recordGameResult({ gameId: g.id, roomId: g.room_id, result: state.result, finishedAt: now })
         rooms.finishGame(g.room_id, state.result)
+        scheduleNextGame(room)
       } else {
         abandonGame(g.id, g.room_id, now)
         room.status = 'waiting'
@@ -105,7 +111,7 @@ export function restoreAll(): void {
       continue
     }
 
-    // 总时长已过 → 直接结算
+    // 本场已耗尽 → 直接结算（不再开下一局）
     if (now >= state.endsAt) {
       const r = settleTimeout(state)
       if (r.ok) {
@@ -117,6 +123,7 @@ export function restoreAll(): void {
           finishedAt: now,
         })
         rooms.finishGame(g.room_id, r.state.result!)
+        scheduleNextGame(room)
       }
       continue
     }
@@ -131,6 +138,7 @@ export function restoreAll(): void {
         if (state.phase === 'finished' && state.result) {
           recordGameResult({ gameId: g.id, roomId: g.room_id, result: state.result, finishedAt: now })
           rooms.finishGame(g.room_id, state.result)
+          scheduleNextGame(room)
           continue
         }
       }
@@ -140,5 +148,31 @@ export function restoreAll(): void {
     const session = new GameSession(g.id, g.room_id, state)
     room.session = session
     session.armTimer()
+  }
+
+  // 4. 等待态房间的本场续局：按上一局 finished_at 恢复局间倒计时/立即开
+  const finStmt = db.prepare(
+    `SELECT MAX(finished_at) AS f FROM games WHERE room_id = ? AND status = 'finished'`,
+  )
+  for (const room of rooms.all()) {
+    if (room.status !== 'waiting' || room.nextGameTimer || room.sessionEndsAt == null) continue
+    if (now >= room.sessionEndsAt) {
+      room.sessionEndsAt = null
+      rooms.saveSessionEnds(room)
+      continue
+    }
+    const fin = (finStmt.get(room.id) as { f: number | null }).f
+    if (fin == null) continue
+    const at = fin + INTERMISSION_MS
+    if (at > now) {
+      scheduleNextGame(room, at - now)
+    } else if (room.players.size >= 2) {
+      const r = startGame(room)
+      if (r.ok) {
+        pushRoomState(room)
+        pushLobby()
+        r.session.broadcastStart()
+      }
+    }
   }
 }

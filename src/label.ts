@@ -53,5 +53,5 @@ export function configSummary(c: {
 }): string {
   const wild =
     c.wildCount === 2 ? '2张(1大1小)' : c.wildCount === 3 ? '3张(2大1小)' : '4张(2大2小)'
-  return `${wild} · ${c.maxPlayers}人 · 回合${c.turnSeconds}s · 总时长${c.gameMinutes}分钟`
+  return `${wild} · ${c.maxPlayers}人 · 回合${c.turnSeconds}s · 本场${c.gameMinutes}分钟`
 }

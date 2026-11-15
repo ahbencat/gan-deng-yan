@@ -51,7 +51,7 @@ function clamp(): void {
         />
       </label>
       <label>
-        对局总时长（分钟）
+        本场时长（分钟，局间自动连开）
         <input
           v-model.number="config.gameMinutes"
           type="number"

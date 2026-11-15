@@ -38,8 +38,10 @@ export function createGame(params: {
   dealerSeat: number
   rng: Rng
   now: number
+  /** 本场截止时刻；缺省 = 单局时长（引擎单测用） */
+  endsAt?: number
 }): GameState {
-  const { gameId, roomId, config, seats, dealerSeat, rng, now } = params
+  const { gameId, roomId, config, seats, dealerSeat, rng, now, endsAt } = params
   const n = seats.length
   if (n < 2 || n > 8) throw new Error('玩家数须在 2~8 之间')
   if (dealerSeat < 0 || dealerSeat >= n) throw new Error('庄家座位越界')
@@ -67,7 +69,7 @@ export function createGame(params: {
     multiplier: 1,
     everPlayed: seats.map(() => false),
     startedAt: now,
-    endsAt: now + config.gameMinutes * 60_000,
+    endsAt: endsAt ?? now + config.gameMinutes * 60_000,
     result: null,
     actionSeq: 0,
   }

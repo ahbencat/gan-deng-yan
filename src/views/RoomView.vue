@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { configSummary } from '../label.js'
-import { send, store } from '../store.js'
+import { send, serverNow, store } from '../store.js'
 import ConfigForm from '../components/ConfigForm.vue'
 import { DEFAULT_ROOM_CONFIG, type RoomConfig } from '../types.js'
 
@@ -41,6 +41,32 @@ function startGame(): void {
 function leave(): void {
   send('room.leave', {})
 }
+
+// 本场剩余 / 自动开局倒计时
+const tick = ref(serverNow())
+let timer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  timer = setInterval(() => {
+    tick.value = serverNow()
+  }, 500)
+})
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+})
+
+const sessionRemain = computed(() => {
+  const ends = room.value?.sessionEndsAt
+  return ends != null ? Math.max(0, ends - tick.value) : null
+})
+const nextIn = computed(() => {
+  const at = room.value?.nextGameAt
+  return at != null ? Math.max(0, Math.ceil((at - tick.value) / 1000)) : null
+})
+
+function fmtMs(ms: number): string {
+  const s = Math.ceil(ms / 1000)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
 </script>
 
 <template>
@@ -48,7 +74,11 @@ function leave(): void {
     <header>
       <div>
         <h2>房间 #{{ room.id }}</h2>
-        <p class="cfg">{{ configSummary(room.config) }}</p>
+        <p class="cfg">
+          {{ configSummary(room.config) }}
+          <template v-if="sessionRemain != null"> · 本场剩余 {{ fmtMs(sessionRemain) }}</template>
+        </p>
+        <p v-if="nextIn != null" class="auto-next">{{ nextIn }} 秒后自动开局下一场</p>
       </div>
       <div class="actions">
         <button v-if="isHost && !editing" class="ghost" @click="startEdit()">修改配置</button>
@@ -121,6 +151,12 @@ h2 {
   margin: 6px 0 0;
   color: #888;
   font-size: 13px;
+}
+.auto-next {
+  margin: 6px 0 0;
+  color: #e65100;
+  font-size: 13px;
+  font-weight: 600;
 }
 .actions {
   display: flex;

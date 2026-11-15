@@ -17,6 +17,55 @@ import { hub } from './ws/hub.js'
 
 /** 回合 deadline 的网络宽限（假设8） */
 const GRACE_MS = 1000
+/** 局间自动开局的间隔（展示结算的时间） */
+export const INTERMISSION_MS = 8000
+
+function clearNextGame(room: Room): void {
+  if (room.nextGameTimer) {
+    clearTimeout(room.nextGameTimer)
+    room.nextGameTimer = null
+  }
+  room.nextGameAt = null
+}
+
+/**
+ * 一局结束后调度下一局（本场内自动连开）。
+ * 本场耗尽 → 结束本场（sessionEndsAt 清空，回普通等待态）；人不够 → 不排，等人齐房主手动开。
+ */
+export function scheduleNextGame(room: Room, delayMs = INTERMISSION_MS): boolean {
+  clearNextGame(room)
+  if (room.sessionEndsAt != null && Date.now() >= room.sessionEndsAt) {
+    room.sessionEndsAt = null
+    rooms.saveSessionEnds(room)
+    return false
+  }
+  if (room.sessionEndsAt == null || room.status !== 'waiting' || room.players.size < 2) {
+    return false
+  }
+  room.nextGameAt = Date.now() + delayMs
+  room.nextGameTimer = setTimeout(() => {
+    room.nextGameTimer = null
+    room.nextGameAt = null
+    fireNextGame(room)
+  }, delayMs)
+  return true
+}
+
+function fireNextGame(room: Room): void {
+  if (room.status !== 'waiting' || room.sessionEndsAt == null) return
+  if (Date.now() >= room.sessionEndsAt) {
+    room.sessionEndsAt = null
+    rooms.saveSessionEnds(room)
+    pushRoomState(room)
+    return
+  }
+  if (room.players.size < 2) return
+  const r = startGame(room)
+  if (!r.ok) return
+  pushRoomState(room)
+  pushLobby()
+  r.session.broadcastStart()
+}
 
 export class GameSession {
   readonly gameId: number
@@ -193,6 +242,8 @@ export class GameSession {
 
     recordGameResult({ gameId: this.gameId, roomId: this.roomId, result, finishedAt: now })
     rooms.finishGame(this.roomId, result)
+    // 本场未耗尽 → 局间倒计时后自动开下一局
+    if (room) scheduleNextGame(room)
 
     // 全员亮牌
     hub.broadcast(
@@ -247,6 +298,12 @@ export function startGame(room: Room): { ok: true; session: GameSession } | { ok
   if (dealerSeat < 0) dealerSeat = 0
 
   const now = Date.now()
+  // 本场：无场或已耗尽 → 按当前配置开新场；否则沿用剩余预算
+  if (!room.sessionEndsAt || room.sessionEndsAt <= now) {
+    room.sessionEndsAt = now + room.config.gameMinutes * 60_000
+    rooms.saveSessionEnds(room)
+  }
+  clearNextGame(room) // 手动开局抢占局间等待
   const state = createGame({
     gameId: 0,
     roomId: room.id,
@@ -255,6 +312,7 @@ export function startGame(room: Room): { ok: true; session: GameSession } | { ok
     dealerSeat,
     rng: mulberry32(systemSeed()),
     now,
+    endsAt: room.sessionEndsAt,
   })
 
   const res = db

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { dismissResult, store } from '../store.js'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { dismissResult, serverNow, store } from '../store.js'
 import type { GameResult } from '../types.js'
 import CardView from './Card.vue'
 
@@ -21,6 +21,22 @@ const headline = computed(() => {
   }
   return `${name(props.result.winnerSeat)} 获胜！`
 })
+
+// 本场未耗尽 → 局间自动开局倒计时
+const tick = ref(serverNow())
+let timer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  timer = setInterval(() => {
+    tick.value = serverNow()
+  }, 500)
+})
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+})
+const nextIn = computed(() => {
+  const at = store.room?.nextGameAt
+  return at != null ? Math.max(0, Math.ceil((at - tick.value) / 1000)) : null
+})
 </script>
 
 <template>
@@ -29,8 +45,9 @@ const headline = computed(() => {
       <h2>{{ headline }}</h2>
       <p class="multi">
         炸弹累计倍率 <b>×{{ result.multiplier }}</b>
-        <em v-if="result.reason === 'timeout'">（总时长到期结算）</em>
+        <em v-if="result.reason !== 'empty'">（本场时间耗尽结算）</em>
       </p>
+      <p v-if="nextIn != null" class="next"> {{ nextIn }} 秒后自动开局下一场…</p>
 
       <table>
         <thead>
@@ -104,6 +121,13 @@ h2 {
 }
 .multi b {
   color: #e65100;
+}
+.next {
+  text-align: center;
+  color: #e65100;
+  font-size: 13px;
+  font-weight: 600;
+  margin: -8px 0 14px;
 }
 .multi em {
   font-style: normal;
