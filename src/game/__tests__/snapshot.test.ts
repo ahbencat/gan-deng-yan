@@ -73,3 +73,77 @@ describe('快照投影隐私', () => {
     expect(state.v).toBe(STATE_VERSION)
   })
 })
+
+describe('bot/托管投影', () => {
+  it('bot 座位恒在线，isBot/delegated 透传', () => {
+    const state = baseState([mk(3, 4), mk(6, 7)])
+    // 真人 0 号离线；1 号是 bot 且托管 → 仍 online
+    const pub = projectPublic(state, new Set(), new Set([1]), new Set([1]))
+    expect(pub.players[0]).toMatchObject({
+      online: false,
+      isBot: false,
+      delegated: false,
+    })
+    expect(pub.players[1]).toMatchObject({
+      online: true,
+      isBot: true,
+      delegated: true,
+    })
+  })
+
+  it('真人托管：isBot=false、delegated=true、在线不受影响', () => {
+    const state = baseState([mk(3, 4), mk(6, 7)])
+    const pub = projectPublic(state, new Set([0]), new Set(), new Set([0]))
+    expect(pub.players[0]).toMatchObject({ online: true, isBot: false, delegated: true })
+    expect(pub.players[1]).toMatchObject({ online: false, isBot: false, delegated: false })
+  })
+
+  it('缺省参：两个集合均为空（旧调用兼容）', () => {
+    const state = baseState([mk(3, 4), mk(6, 7)])
+    const pub = projectPublic(state, new Set([0]))
+    for (const p of pub.players) {
+      expect(p.isBot).toBe(false)
+      expect(p.delegated).toBe(false)
+    }
+    expect(pub.players[0].online).toBe(true)
+    expect(pub.players[1].online).toBe(false)
+  })
+
+  it('projectSnapshot 透传 bot/托管标记', () => {
+    const state = baseState([mk(3, 4), mk(6, 7)])
+    const snap = projectSnapshot(state, 0, new Set(), new Set([1]), new Set([1]))
+    expect(snap.public.players[1]).toMatchObject({ isBot: true, delegated: true, online: true })
+  })
+})
+
+describe('本场累计分投影', () => {
+  it('sessionDelta 缺省为 0，按 seat 透传', () => {
+    const state = baseState([mk(3, 4), mk(6, 7)])
+    expect(
+      projectPublic(state, new Set([0, 1])).players.map((p) => p.sessionDelta),
+    ).toEqual([0, 0])
+
+    const pub = projectPublic(
+      state,
+      new Set([0, 1]),
+      new Set(),
+      new Set(),
+      new Map([
+        [0, 12],
+        [1, -12],
+      ]),
+    )
+    expect(pub.players.map((p) => p.sessionDelta)).toEqual([12, -12])
+
+    const snap = projectSnapshot(
+      state,
+      0,
+      new Set(),
+      new Set(),
+      new Set(),
+      new Map([[0, 12]]),
+    )
+    expect(snap.public.players[0].sessionDelta).toBe(12)
+    expect(snap.public.players[1].sessionDelta).toBe(0)
+  })
+})

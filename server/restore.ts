@@ -1,10 +1,20 @@
-// 启动恢复：重建等待/进行中房间；进行中对局按绝对时间戳裁决过期 deadline；
-// 版本门禁失败的对局作废不计分。玩家 WS 连上即由 dispatch 的 session 恢复。
-import { applyTimeout, settleTimeout } from '../src/game/engine.js'
+// 启动恢复：重建等待/进行中房间；进行中对局按绝对时间戳裁决过期回合 deadline；
+// 本场到点不强制结算进行中的对局（等自然结束）；版本门禁失败的对局作废不计分。
+// 玩家 WS 连上即由 dispatch 的 session 恢复。
+import { applyAutoMove, applyTimeout } from '../src/game/engine.js'
 import { STATE_VERSION, type GameState } from '../src/types.js'
 import { db } from './db.js'
-import { GameSession, INTERMISSION_MS, scheduleNextGame, startGame } from './gameSession.js'
+import {
+  afterGameRecorded,
+  armSessionExpiry,
+  finalizeSession,
+  GameSession,
+  INTERMISSION_MS,
+  scheduleNextGame,
+  startGame,
+} from './gameSession.js'
 import { pushLobby, pushRoomState } from './notify.js'
+import { brainForUser } from './npc.js'
 import { rooms, type RoomPlayer } from './roomManager.js'
 import { abandonGame, recordGameResult } from './users.js'
 
@@ -14,7 +24,9 @@ interface RoomRow {
   status: string
   config_json: string
   last_result_json: string | null
+  session_started_at: number | null
   session_ends_at: number | null
+  session_summary_json: string | null
 }
 
 interface GameRow {
@@ -30,12 +42,13 @@ export function restoreAll(): void {
   // 1. 加载 waiting/playing 房间（连接为空，全员 offline）
   const roomRows = db
     .prepare(
-      `SELECT id, host_user_id, status, config_json, last_result_json, session_ends_at
+      `SELECT id, host_user_id, status, config_json, last_result_json,
+              session_started_at, session_ends_at, session_summary_json
        FROM rooms WHERE status IN ('waiting','playing')`,
     )
     .all() as unknown as RoomRow[]
   const playerStmt = db.prepare(
-    `SELECT rp.user_id, rp.seat, u.nickname, u.score
+    `SELECT rp.user_id, rp.seat, u.nickname, u.score, u.is_bot
      FROM room_players rp JOIN users u ON u.id = rp.user_id WHERE rp.room_id = ?`,
   )
   for (const row of roomRows) {
@@ -44,14 +57,22 @@ export function restoreAll(): void {
       seat: number
       nickname: string
       score: number
+      is_bot: number
     }[]
     const players: RoomPlayer[] = prows.map((p) => ({
       userId: p.user_id,
       nickname: p.nickname,
       seat: p.seat,
       score: p.score,
+      isBot: !!p.is_bot,
     }))
     rooms.loadRoom(row, players)
+  }
+
+  // 1.5 关纯 bot 房（真人已全部离开的崩溃间隙；closeRoom 清 bot 锚点回空闲池）
+  for (const room of rooms.all()) {
+    const hasHuman = [...room.players.values()].some((p) => !p.isBot)
+    if (!hasHuman) rooms.closeRoom(room.id)
   }
 
   // 2. 清理孤儿恢复锚点（房间不存在或本人不在座）
@@ -103,7 +124,7 @@ export function restoreAll(): void {
         db.prepare('UPDATE games SET state_json = ? WHERE id = ?').run(JSON.stringify(state), g.id)
         recordGameResult({ gameId: g.id, roomId: g.room_id, result: state.result, finishedAt: now })
         rooms.finishGame(g.room_id, state.result)
-        scheduleNextGame(room)
+        afterGameRecorded(room)
       } else {
         abandonGame(g.id, g.room_id, now)
         room.status = 'waiting'
@@ -111,26 +132,17 @@ export function restoreAll(): void {
       continue
     }
 
-    // 本场已耗尽 → 直接结算（不再开下一局）
-    if (now >= state.endsAt) {
-      const r = settleTimeout(state)
-      if (r.ok) {
-        db.prepare('UPDATE games SET state_json = ? WHERE id = ?').run(JSON.stringify(r.state), g.id)
-        recordGameResult({
-          gameId: g.id,
-          roomId: g.room_id,
-          result: r.state.result!,
-          finishedAt: now,
-        })
-        rooms.finishGame(g.room_id, r.state.result!)
-        scheduleNextGame(room)
-      }
-      continue
-    }
+    // 本场已耗尽也照常恢复（不强制结算）；对局自然结束后再 finalize 本场
 
     // 回合 deadline 已过 → 恰好补一步自动动作（新 deadline = now+turnSeconds，不会级联）
+    // bot 座位用 applyAutoMove（跟牌也压）；真人仍是超时语义（跟牌过）——重启后无托管态
     if (now >= state.trick.turnDeadline) {
-      const r = applyTimeout(state, now)
+      const turnUserId = state.seats[state.trick.turnSeat]?.userId
+      const isBotTurn =
+        turnUserId != null && room.players.get(turnUserId)?.isBot === true
+      const r = isBotTurn
+        ? applyAutoMove(state, now, brainForUser(turnUserId!))
+        : applyTimeout(state, now)
       if (r.ok) {
         state = r.state
         db.prepare('UPDATE games SET state_json = ? WHERE id = ?').run(JSON.stringify(state), g.id)
@@ -138,41 +150,51 @@ export function restoreAll(): void {
         if (state.phase === 'finished' && state.result) {
           recordGameResult({ gameId: g.id, roomId: g.room_id, result: state.result, finishedAt: now })
           rooms.finishGame(g.room_id, state.result)
-          scheduleNextGame(room)
+          afterGameRecorded(room)
           continue
         }
       }
     }
 
-    // 正常挂会话，重挂定时器
+    // 正常挂会话，重挂定时器（只按回合 deadline；本场到点不打断）
     const session = new GameSession(g.id, g.room_id, state)
     room.session = session
     session.armTimer()
   }
 
-  // 4. 等待态房间的本场续局：按上一局 finished_at 恢复局间倒计时/立即开
+  // 4. 等待态房间的本场续局：过期 → finalize；否则按本场最后一局 finished_at 恢复局间倒计时/立即开
   const finStmt = db.prepare(
-    `SELECT MAX(finished_at) AS f FROM games WHERE room_id = ? AND status = 'finished'`,
+    `SELECT MAX(finished_at) AS f FROM games
+     WHERE room_id = ? AND status = 'finished' AND started_at >= ?`,
   )
   for (const room of rooms.all()) {
     if (room.status !== 'waiting' || room.nextGameTimer || room.sessionEndsAt == null) continue
+    // 旧库回填：有截止无开始 → 按配置窗口反推
+    if (room.sessionStartedAt == null) {
+      room.sessionStartedAt = room.sessionEndsAt - room.config.gameMinutes * 60_000
+      rooms.saveSession(room)
+    }
     if (now >= room.sessionEndsAt) {
-      room.sessionEndsAt = null
-      rooms.saveSessionEnds(room)
+      finalizeSession(room)
       continue
     }
-    const fin = (finStmt.get(room.id) as { f: number | null }).f
-    if (fin == null) continue
+    const fin = (finStmt.get(room.id, room.sessionStartedAt) as { f: number | null }).f
+    if (fin == null) {
+      armSessionExpiry(room)
+      continue
+    }
     const at = fin + INTERMISSION_MS
-    if (at > now) {
+    if (at > now && at < room.sessionEndsAt) {
       scheduleNextGame(room, at - now)
-    } else if (room.players.size >= 2) {
+    } else if (at <= now && room.players.size >= 2 && now < room.sessionEndsAt) {
       const r = startGame(room)
       if (r.ok) {
         pushRoomState(room)
         pushLobby()
         r.session.broadcastStart()
       }
+    } else {
+      armSessionExpiry(room)
     }
   }
 }

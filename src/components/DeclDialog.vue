@@ -43,7 +43,9 @@ const chosen = ref(0)
   border-radius: 12px;
   padding: 22px;
   width: 320px;
+  max-width: 94vw;
   max-height: 86vh;
+  max-height: 86dvh;
   overflow: auto;
 }
 h3 {
@@ -80,5 +82,15 @@ button {
 button.ghost {
   background: #f0f0f0;
   color: #555;
+}
+
+@media (max-width: 640px) {
+  .dialog {
+    padding: 16px;
+  }
+  /* 牌型选项行加高，方便手指点选 */
+  .option {
+    padding: 12px 8px;
+  }
 }
 </style>

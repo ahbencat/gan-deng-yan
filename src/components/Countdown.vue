@@ -5,7 +5,6 @@ import { serverNow } from '../store.js'
 const props = defineProps<{
   /** 绝对 deadline（服务端时间戳 ms） */
   deadline: number
-  size?: number
 }>()
 
 const now = ref(serverNow())
@@ -34,25 +33,19 @@ const progress = computed(() => {
   const total = 30_000
   return Math.min(1, remaining.value / total)
 })
-const size = computed(() => props.size ?? 44)
 </script>
 
 <template>
-  <div
-    class="countdown"
-    :class="{ urgent }"
-    :style="{
-      width: size + 'px',
-      height: size + 'px',
-      '--p': progress,
-    }"
-  >
+  <div class="countdown" :class="{ urgent }" :style="{ '--p': progress }">
     <span>{{ text }}</span>
   </div>
 </template>
 
 <style scoped>
 .countdown {
+  /* 尺寸由父级槽位（.cd）按断点决定 */
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   display: flex;
   align-items: center;

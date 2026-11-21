@@ -8,6 +8,7 @@ import type {
   PublicGameState,
   RoomListEntry,
   RoomState,
+  SessionSummary,
   UserPublic,
 } from './types.js'
 import { apiMe } from './net/api.js'
@@ -29,6 +30,8 @@ interface Store {
   /** 终局结果（game.over）；点「返回房间」后清空 */
   result: GameResult | null
   allHands: { seat: number; cards: Card[] }[] | null
+  /** 本场最终结算（session.final / 重连恢复）；点「返回房间」后清空 */
+  finalSummary: SessionSummary | null
   /** 服务端时钟偏移：serverNow ≈ Date.now() + clockOffset */
   clockOffset: number
   pendingHand: { seat: number; hand: Card[] } | null
@@ -45,6 +48,7 @@ export const store = reactive<Store>({
   lastError: null,
   result: null,
   allHands: null,
+  finalSummary: null,
   clockOffset: 0,
   pendingHand: null,
 })
@@ -112,6 +116,7 @@ function resetSession(): void {
   store.game = null
   store.result = null
   store.allHands = null
+  store.finalSummary = null
   store.lobbyRooms = []
   store.pendingHand = null
 }
@@ -171,6 +176,8 @@ function handleMessage(env: Envelope): void {
       store.game = p.game
       store.result = null
       store.allHands = null
+      // 重连恢复：本场已结束则恢复最终结算弹窗
+      store.finalSummary = p.room?.sessionSummary ?? null
       if (p.room && p.game && p.game.public.phase === 'playing') {
         store.phase = 'game'
       } else if (p.room) {
@@ -184,6 +191,17 @@ function handleMessage(env: Envelope): void {
     case 'lobby.list': {
       const p = env.payload as { rooms: RoomListEntry[] }
       store.lobbyRooms = p.rooms
+      // pushLobby 只发给「服务器侧已不在任何房间」的在线用户：
+      // 离开房间（关房与否）后服务器只推 lobby.list、不推 room.state，
+      // 此时以服务器为准同步回大厅，否则 UI 卡在房间页
+      if (store.phase === 'room' || store.phase === 'game') {
+        store.room = null
+        store.game = null
+        store.result = null // 局间离开/解散时挂着的单局结算一并清掉
+        store.allHands = null
+        store.finalSummary = null
+        store.phase = 'lobby'
+      }
       return
     }
     case 'room.state': {
@@ -191,6 +209,9 @@ function handleMessage(env: Envelope): void {
       if (store.room.status === 'closed') {
         store.room = null
         store.game = null
+        store.result = null
+        store.allHands = null
+        store.finalSummary = null
         store.phase = 'lobby'
         send('lobby.list', {})
         return
@@ -203,6 +224,9 @@ function handleMessage(env: Envelope): void {
     case 'room.closed': {
       store.room = null
       store.game = null
+      store.result = null // 局间解散时挂着的单局结算一并清掉
+      store.allHands = null
+      store.finalSummary = null
       store.phase = 'lobby'
       send('lobby.list', {})
       return
@@ -218,6 +242,7 @@ function handleMessage(env: Envelope): void {
       store.game = { public: pub, you }
       store.result = null
       store.allHands = null
+      store.finalSummary = null // 新局开始 → 清最终结算
       store.phase = 'game'
       return
     }
@@ -237,6 +262,11 @@ function handleMessage(env: Envelope): void {
       store.phase = 'game'
       return
     }
+    case 'session.final': {
+      // 本场结束：弹最终累计排名（覆盖当前视图，不改 phase）
+      store.finalSummary = env.payload as SessionSummary
+      return
+    }
     default:
       return
   }
@@ -251,5 +281,11 @@ export function clearError(): void {
 export function dismissResult(): void {
   store.result = null
   store.allHands = null
+  store.finalSummary = null
   store.phase = 'room'
+}
+
+/** 房间页手动打开本场结算（已 finalize 的房间可回看） */
+export function openFinalSummary(summary: SessionSummary): void {
+  store.finalSummary = summary
 }

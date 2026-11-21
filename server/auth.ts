@@ -27,6 +27,10 @@ if (process.env.TOKEN_SECRET) {
 export const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 天
 export const COOKIE_NAME = 'gdy_token'
 
+// 管理员会话（独立 cookie/时长；payload 无 uid → 游戏 verifyToken 结构性拒绝，反之亦然）
+export const ADMIN_COOKIE_NAME = 'gdy_admin'
+export const ADMIN_TTL_MS = 2 * 60 * 60 * 1000 // 2 小时
+
 // ---- 密码：scrypt（node:crypto，零依赖），存 "saltHex:hashHex" ----
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -53,12 +57,17 @@ interface TokenPayload {
 
 export function signToken(userId: number): string {
   const payload: TokenPayload = { uid: userId, exp: Date.now() + TOKEN_TTL_MS }
+  return sign(payload)
+}
+
+function sign(payload: object): string {
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url')
   const sig = crypto.createHmac('sha256', TOKEN_SECRET).update(payloadB64).digest('base64url')
   return `${payloadB64}.${sig}`
 }
 
-export function verifyToken(token: string | null | undefined): { uid: number } | null {
+/** 校验签名与过期；载荷校验交由调用方（形状互斥） */
+function verifySig(token: string | null | undefined): Record<string, unknown> | null {
   if (!token || typeof token !== 'string') return null
   const dot = token.indexOf('.')
   if (dot < 0) return null
@@ -70,13 +79,40 @@ export function verifyToken(token: string | null | undefined): { uid: number } |
   if (sigBuf.length !== expectedBuf.length) return null
   if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null
   try {
-    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8')) as TokenPayload
-    if (typeof payload.uid !== 'number' || typeof payload.exp !== 'number') return null
-    if (Date.now() > payload.exp) return null
-    return { uid: payload.uid }
+    return JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >
   } catch {
     return null
   }
+}
+
+export function verifyToken(token: string | null | undefined): { uid: number } | null {
+  const payload = verifySig(token)
+  if (!payload) return null
+  if (typeof payload.uid !== 'number' || typeof payload.exp !== 'number') return null
+  if (Date.now() > payload.exp) return null
+  return { uid: payload.uid }
+}
+
+// ---- 管理员 token（payload {adm, exp}：与游戏 token 形状互斥）----
+
+interface AdminTokenPayload {
+  adm: true
+  exp: number
+}
+
+export function signAdminToken(): string {
+  const payload: AdminTokenPayload = { adm: true, exp: Date.now() + ADMIN_TTL_MS }
+  return sign(payload)
+}
+
+export function verifyAdminToken(token: string | null | undefined): boolean {
+  const payload = verifySig(token)
+  if (!payload) return false
+  if (payload.adm !== true || typeof payload.exp !== 'number') return false
+  return Date.now() <= payload.exp
 }
 
 // ---- Cookie 解析/构造（不引 cookie-parser，手写够用）----
@@ -108,14 +144,25 @@ export function getTokenFromRequest(req: {
 }
 
 /** httpOnly cookie；局域网 http 部署，不加 Secure */
-export function buildSetCookie(token: string, maxAgeMs = TOKEN_TTL_MS): string {
-  return `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(
+export function buildSetCookie(
+  token: string,
+  maxAgeMs = TOKEN_TTL_MS,
+  name = COOKIE_NAME,
+): string {
+  return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(
     maxAgeMs / 1000,
   )}`
 }
 
-export function buildClearCookie(): string {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+export function buildClearCookie(name = COOKIE_NAME): string {
+  return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+}
+
+/** 定长比较（双方 sha256 后 timingSafeEqual，不泄露长度）——管理密码比对用 */
+export function safeEqual(a: string, b: string): boolean {
+  const ha = crypto.createHash('sha256').update(a).digest()
+  const hb = crypto.createHash('sha256').update(b).digest()
+  return crypto.timingSafeEqual(ha, hb)
 }
 
 // ---- 登录限速：每 IP 约 10 次/分钟 ----
@@ -123,13 +170,24 @@ const LOGIN_WINDOW_MS = 60_000
 const LOGIN_MAX = 10
 const attempts = new Map<string, { count: number; resetAt: number }>()
 
-export function checkLoginRate(ip: string): boolean {
+function rateCheck(map: Map<string, { count: number; resetAt: number }>, max: number, ip: string): boolean {
   const now = Date.now()
-  const entry = attempts.get(ip)
+  const entry = map.get(ip)
   if (!entry || now > entry.resetAt) {
-    attempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS })
+    map.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS })
     return true
   }
   entry.count++
-  return entry.count <= LOGIN_MAX
+  return entry.count <= max
+}
+
+export function checkLoginRate(ip: string): boolean {
+  return rateCheck(attempts, LOGIN_MAX, ip)
+}
+
+// ---- 管理员登录限速：独立桶，每 IP 5 次/分钟（更严，不与游戏登录互锁）----
+const adminAttempts = new Map<string, { count: number; resetAt: number }>()
+
+export function checkAdminLoginRate(ip: string): boolean {
+  return rateCheck(adminAttempts, 5, ip)
 }

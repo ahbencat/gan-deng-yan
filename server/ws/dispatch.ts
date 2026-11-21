@@ -1,7 +1,7 @@
 // WS 消息分发：信封解析 + 输入消毒 + 路由（服务端是信任边界，一切客户端输入在此消毒）
 import type { WebSocket } from 'ws'
 import { WS_ENVELOPE_VERSION, type Decl, type Envelope } from '../../src/types.js'
-import { startGame } from '../gameSession.js'
+import { extendSession, startGame } from '../gameSession.js'
 import { pushLobby, pushRoomState } from '../notify.js'
 import { rooms, sanitizeConfig } from '../roomManager.js'
 import { getUserById, toPublic } from '../users.js'
@@ -140,6 +140,28 @@ function route(ws: WebSocket, userId: number, type: string, payload: Payload, se
       pushLobby()
       return
     }
+    case 'room.dissolve': {
+      const room = rooms.getByUser(userId)
+      if (!room) {
+        sendError(ws, 'NOT_IN_ROOM', '你不在任何房间', seq)
+        return
+      }
+      if (room.hostUserId !== userId) {
+        sendError(ws, 'NOT_HOST', '只有房主可以解散房间', seq)
+        return
+      }
+      if (room.status !== 'waiting') {
+        sendError(ws, 'NOT_WAITING', '对局进行中，不能解散房间', seq)
+        return
+      }
+      // 先广播再关房：room.closed 含全体成员；closeRoom 清锚点后 pushLobby 才能触达他们
+      const memberIds = rooms.memberIds(room)
+      const roomId = room.id
+      hub.broadcast(memberIds, 'room.closed', { roomId, reason: 'dissolved' })
+      rooms.dissolve(roomId)
+      pushLobby()
+      return
+    }
     case 'room.config': {
       const config = sanitizeConfig(payload.config)
       if (!config) {
@@ -175,6 +197,49 @@ function route(ws: WebSocket, userId: number, type: string, payload: Payload, se
       r.session.broadcastStart()
       return
     }
+    case 'room.addBot': {
+      const room = rooms.getByUser(userId)
+      if (!room) {
+        sendError(ws, 'NOT_IN_ROOM', '你不在任何房间', seq)
+        return
+      }
+      if (room.hostUserId !== userId) {
+        sendError(ws, 'NOT_HOST', '只有房主可以添加电脑', seq)
+        return
+      }
+      const r = rooms.addBot(room.id)
+      if (!r.ok) {
+        sendError(ws, 'ADD_BOT_FAILED', r.error, seq)
+        return
+      }
+      pushRoomState(r.room)
+      pushLobby()
+      return
+    }
+    case 'room.removeBot': {
+      const targetId = payload.userId
+      if (!Number.isInteger(targetId) || (targetId as number) <= 0) {
+        sendError(ws, 'BAD_USER_ID', '参数非法', seq)
+        return
+      }
+      const room = rooms.getByUser(userId)
+      if (!room) {
+        sendError(ws, 'NOT_IN_ROOM', '你不在任何房间', seq)
+        return
+      }
+      if (room.hostUserId !== userId) {
+        sendError(ws, 'NOT_HOST', '只有房主可以移除电脑', seq)
+        return
+      }
+      const r = rooms.removeBot(room, targetId as number)
+      if (!r.ok) {
+        sendError(ws, 'REMOVE_BOT_FAILED', r.error, seq)
+        return
+      }
+      pushRoomState(room)
+      pushLobby()
+      return
+    }
     case 'game.play': {
       const session = getSession(userId)
       if (!session) return
@@ -199,6 +264,46 @@ function route(ws: WebSocket, userId: number, type: string, payload: Payload, se
       const session = getSession(userId)
       if (!session) return
       session.sync(userId)
+      return
+    }
+    case 'game.delegate': {
+      const delegated = payload.delegated
+      if (typeof delegated !== 'boolean') {
+        sendError(ws, 'BAD_DELEGATE', '参数非法', seq)
+        return
+      }
+      // 用 getByUser（非 getSession）：等待/局间也可切换托管；仅影响本人
+      const room = rooms.getByUser(userId)
+      if (!room) {
+        sendError(ws, 'NOT_IN_ROOM', '你不在任何房间', seq)
+        return
+      }
+      if (delegated) room.delegated.add(userId)
+      else room.delegated.delete(userId)
+      if (room.session) room.session.refresh()
+      pushRoomState(room)
+      return
+    }
+    case 'session.extend': {
+      const minutes = payload.minutes
+      if (typeof minutes !== 'number') {
+        sendError(ws, 'BAD_EXTEND', '参数非法', seq)
+        return
+      }
+      const room = rooms.getByUser(userId)
+      if (!room) {
+        sendError(ws, 'NOT_IN_ROOM', '你不在任何房间', seq)
+        return
+      }
+      if (room.hostUserId !== userId) {
+        sendError(ws, 'NOT_HOST', '只有房主可以加时', seq)
+        return
+      }
+      const r = extendSession(room, minutes)
+      if (!r.ok) {
+        sendError(ws, 'EXTEND_FAILED', r.error, seq)
+        return
+      }
       return
     }
     default:

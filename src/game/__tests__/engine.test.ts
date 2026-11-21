@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { STATE_VERSION, type Play } from '../../types.js'
-import { applyPass, applyPlay, applyTimeout, createGame, settleTimeout } from '../engine.js'
+import {
+  applyAutoMove,
+  applyPass,
+  applyPlay,
+  applyTimeout,
+  createGame,
+  settleTimeout,
+} from '../engine.js'
 import { mulberry32 } from '../rng.js'
 import { baseState, mk } from './helpers.js'
 
@@ -308,6 +315,92 @@ describe('applyTimeout', () => {
   })
 })
 
+describe('applyAutoMove', () => {
+  it('领出：出最小单张（同 pickAutoPlay）', () => {
+    const state = baseState([mk(7, 3), mk(5, 6)])
+    const r = applyAutoMove(state, 1000)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.state.trick.lastPlay?.decl).toEqual({ type: 'single', rank: 3 })
+    expect(r.state.trick.turnSeat).toBe(1)
+  })
+
+  it('跟牌：压最小合法牌', () => {
+    const playedFive = mk(5)
+    const state = baseState([mk(6, 3), mk(9)], {
+      trick: {
+        leaderSeat: 1,
+        lastPlay: { seat: 1, cards: playedFive, decl: { type: 'single', rank: 5 } },
+        turnSeat: 0,
+        turnDeadline: 0,
+        log: [],
+      },
+    })
+    const r = applyAutoMove(state, 1000)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.state.trick.lastPlay?.decl).toEqual({ type: 'single', rank: 6 })
+    expect(r.state.trick.log).toContainEqual({
+      seat: 0,
+      kind: 'play',
+      cards: [expect.objectContaining({ rank: 6 })],
+      decl: { type: 'single', rank: 6 },
+    })
+  })
+
+  it('跟牌压不过：过牌（与 applyTimeout 不同——不弃权也能压时会压）', () => {
+    const playedTen = mk(10)
+    const state = baseState([mk(3, 4), mk(9)], {
+      trick: {
+        leaderSeat: 1,
+        lastPlay: { seat: 1, cards: playedTen, decl: { type: 'single', rank: 10 } },
+        turnSeat: 0,
+        turnDeadline: 0,
+        log: [],
+      },
+    })
+    const r = applyAutoMove(state, 1000)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.state.trick.log).toContainEqual({ seat: 0, kind: 'pass' })
+  })
+
+  it('跟牌可压时不会像超时那样直接过（基础 bot 主动压）', () => {
+    // 对照：applyTimeout 在跟牌态必过；applyAutoMove 有解必压
+    const playedThree = mk(3)
+    const mkState = () =>
+      baseState([mk(4), mk(9)], {
+        trick: {
+          leaderSeat: 1,
+          lastPlay: { seat: 1, cards: playedThree, decl: { type: 'single', rank: 3 } },
+          turnSeat: 0,
+          turnDeadline: 0,
+          log: [],
+        },
+      })
+    const timeoutR = applyTimeout(mkState(), 1000)
+    expect(timeoutR.ok && timeoutR.state.trick.log.at(-1)).toEqual({ seat: 0, kind: 'pass' })
+    const autoR = applyAutoMove(mkState(), 1000)
+    expect(autoR.ok).toBe(true)
+    if (!autoR.ok) return
+    expect(autoR.state.trick.lastPlay?.decl).toEqual({ type: 'single', rank: 4 })
+  })
+
+  it('出完即赢：phase finished', () => {
+    const state = baseState([mk(3), mk(5, 6)])
+    const r = applyAutoMove(state, 1000)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.state.phase).toBe('finished')
+    expect(r.state.result?.winnerSeat).toBe(0)
+  })
+
+  it('已结束的对局拒绝', () => {
+    const done = baseState([mk(3), mk(5, 6)], { phase: 'finished' as const })
+    expect(applyAutoMove(done, 0)).toEqual({ ok: false, error: '对局已结束' })
+  })
+})
+
 describe('settleTimeout', () => {
   it('总时长到期：剩牌最少者赢', () => {
     const state = baseState([mk(3, 4), mk(5, 6, 7, 8, 9), mk(10, 11, 12)], {
@@ -346,6 +439,7 @@ describe('已结束的对局拒绝一切动作', () => {
     })
     expect(applyPass(done(), 0, 0)).toEqual({ ok: false, error: '对局已结束' })
     expect(applyTimeout(done(), 0)).toEqual({ ok: false, error: '对局已结束' })
+    expect(applyAutoMove(done(), 0)).toEqual({ ok: false, error: '对局已结束' })
     expect(settleTimeout(done())).toEqual({ ok: false, error: '对局已结束' })
   })
 })

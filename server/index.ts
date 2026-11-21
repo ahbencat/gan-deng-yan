@@ -14,6 +14,8 @@ import {
   verifyPassword,
   verifyToken,
 } from './auth.js'
+import { adminRouter } from './admin.js'
+import { ensureNpcUsers } from './npc.js'
 import { restoreAll } from './restore.js'
 import { findUserByUsername, getUserById, toPublic, touchLogin } from './users.js'
 import { handleConnection } from './ws/dispatch.js'
@@ -41,7 +43,7 @@ app.post('/api/login', (req, res) => {
     return
   }
   const row = findUserByUsername(username)
-  if (!row || !verifyPassword(password, row.password_hash)) {
+  if (!row || row.is_bot || !verifyPassword(password, row.password_hash)) {
     res.status(401).json({ error: '用户名或密码错误' })
     return
   }
@@ -65,11 +67,18 @@ app.get('/api/me', (req, res) => {
   res.json({ user: row ? toPublic(row) : null })
 })
 
+// ---- 管理员（独立 cookie 会话；页面公开、数据靠鉴权；管理员不参与游戏）----
+app.use('/api/admin', adminRouter)
+app.get('/admin', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'adminPage.html'))
+})
+
 // 生产模式托管前端构建产物（dev 模式由 vite 起 5174 并代理 /api、/ws）
 const distDir = path.join(__dirname, '..', 'dist')
 app.use(express.static(distDir))
 
 // ---- 启动恢复 ----
+ensureNpcUsers() // 先补齐 7 个固定 NPC 账号，再恢复房间（addBot 依赖花名册存在）
 restoreAll()
 
 const server = createServer(app)

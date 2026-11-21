@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { RANK_2, RANK_A, RANK_MIN, isWild, type Card, type Decl, type GameState, type Play } from '../../types.js'
 import { buildDeck } from '../cards.js'
 import { canForm } from '../combo.js'
-import { applyPass, applyPlay, applyTimeout, createGame, settleTimeout } from '../engine.js'
+import {
+  applyAutoMove,
+  applyPass,
+  applyPlay,
+  applyTimeout,
+  createGame,
+  settleTimeout,
+} from '../engine.js'
 import { mulberry32, type Rng } from '../rng.js'
 import { canBeat, pickAutoPlay } from '../rules.js'
 
@@ -279,6 +286,49 @@ function collectPlayed(before: GameState, after: GameState, playedIds: Set<numbe
   }
 }
 
+/** 全自动模式：每步 applyAutoMove（电脑/托管共用路径），直到终局 */
+function runAutoGame(seed: number, maxActions: number): GameState {
+  const rng = mulberry32(seed)
+  const wildCount = ([2, 3, 4] as const)[Math.floor(rng() * 3)]
+  const playerCount = 2 + Math.floor(rng() * 7) // 2~8
+  const seats = Array.from({ length: playerCount }, (_, i) => ({
+    seat: i,
+    userId: i + 1,
+    nickname: `P${i + 1}`,
+  }))
+  const now = 1_000_000
+  let state = createGame({
+    gameId: seed,
+    roomId: 1,
+    config: { wildCount, maxPlayers: playerCount, turnSeconds: 30, gameMinutes: 10 },
+    seats,
+    dealerSeat: 0,
+    rng,
+    now,
+  })
+
+  const deckIds = new Set(buildDeck(wildCount).map((c) => c.id))
+  const playedIds = new Set<number>()
+  checkInvariants(state, deckIds, playedIds)
+
+  let actions = 0
+  while (state.phase === 'playing' && actions < maxActions) {
+    actions++
+    const r = applyAutoMove(state, now + actions * 1000)
+    expect(r.ok).toBe(true) // 自动着法必合法
+    if (r.ok) {
+      collectPlayed(state, r.state, playedIds)
+      state = r.state
+    }
+    checkInvariants(state, deckIds, playedIds)
+  }
+
+  expect(actions).toBeLessThanOrEqual(maxActions)
+  expect(state.phase).toBe('finished') // 领出必出牌 → 牌堆有限 → 必终局
+  checkInvariants(state, deckIds, playedIds)
+  return state
+}
+
 // ---------------------------------------------------------------------------
 
 describe('fuzz 随机对局', () => {
@@ -293,4 +343,13 @@ describe('fuzz 随机对局', () => {
       runRandomGame(seed, 5000)
     }
   }, 60_000)
+
+  it('全自动模式（每步 applyAutoMove）：多籽必终局且零和', () => {
+    for (let seed = 1; seed <= 50; seed++) {
+      const state = runAutoGame(seed, 5000)
+      expect(state.result).not.toBeNull()
+      const sum = state.result!.perPlayer.reduce((a, p) => a + p.delta, 0)
+      expect(sum).toBe(0)
+    }
+  }, 30_000)
 })

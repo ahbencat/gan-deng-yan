@@ -5,12 +5,14 @@
 // 显式假设（改动集中在本文件与对应单点函数）：
 //  1. 单2/对2 不能被另一个2压，只能被炸弹压
 //  2. 自然222是合法炸弹；百搭可配2炸/对2（2+王=对2、22+王=2炸）；全百搭对子/炸弹可声明 3~A 或 2
-//  3. 超时并列最少牌 → 流局，不计分
-//  4. 首局庄家=房主，再局=上局赢家（离开则房主）
-//  5. 对局中不允许主动离房；关浏览器由超时托管
-//  6. 计分：输家 = 剩牌张数 × 累计倍率 × (关瞪瞪?2:1)；赢家得总和；恒零和；超时赢家剩牌不计费
-//  7. 回合超时：跟牌自动过；领出自动出最小合法牌（single<pair<straight<pairChain<bomb）
-//  8. 回合 deadline 给 1s 网络宽限
+//  3. 首局庄家=房主，再局=上局赢家（离开则房主）
+//  4. 对局中不允许主动离房；关浏览器由超时托管
+//  5. 计分：输家 = 剩牌张数 × 累计倍率 × (关瞪瞪?2:1)；赢家得总和；恒零和
+//  6. 回合超时：跟牌自动过；领出自动出最小合法牌（single<pair<straight<pairChain<bomb）
+//  7. 回合 deadline 给 1s 网络宽限
+//  8. 本场时长：首局开局起算的总预算，局间自动连开直到耗尽；本场到点不强制结算进行中的对局，
+//     等待当前局自然结束后再做最终累计结算；若到点时无进行中的局（等待/局间），直接结束本场。
+//     引擎保留 timeout/draw 结算能力以兼容旧状态/旧记录，新服务端对局自然产生 empty。
 // ============================================================================
 
 // ---- 牌点 ----
@@ -115,6 +117,23 @@ export interface GameResult {
   multiplier: number
 }
 
+// ---- 本场累计结算 ----
+export interface SessionRankRow {
+  rank: number
+  userId: number
+  nickname: string
+  totalDelta: number
+}
+
+export interface SessionSummary {
+  roomId: number
+  startedAt: number
+  /** finalize 时刻 */
+  endedAt: number
+  gameCount: number
+  rows: SessionRankRow[]
+}
+
 export interface SeatMeta {
   seat: number
   userId: number
@@ -140,6 +159,7 @@ export interface GameState {
   /** 关瞪瞪判定：是否成功出过牌 */
   everPlayed: boolean[]
   startedAt: number
+  /** 本场截止时刻（调度/展示用）；到期不强制终局，等当前局自然结束后结算本场 */
   endsAt: number
   result: GameResult | null
   actionSeq: number
@@ -154,6 +174,12 @@ export interface PublicPlayerState {
   online: boolean
   everPlayed: boolean
   isDealer: boolean
+  /** 电脑玩家（服务器驱动出牌，恒在线） */
+  isBot: boolean
+  /** 托管中 */
+  delegated: boolean
+  /** 本场累计得分：本场已结束对局的 delta 合计（当前进行中的本局不计；与最终排名同口径） */
+  sessionDelta: number
 }
 
 export interface PublicTrickState {
@@ -173,6 +199,7 @@ export interface PublicGameState {
   trick: PublicTrickState
   multiplier: number
   bombHistory: BombHistoryEntry[]
+  /** 本场截止时刻（仅展示/调度用）；到期不强制终局 */
   endsAt: number
 }
 
@@ -190,6 +217,8 @@ export interface UserPublic {
   score: number
   gamesPlayed: number
   wins: number
+  /** 电脑账号（不可登录，服务器驱动出牌） */
+  isBot: boolean
 }
 
 export interface RoomPlayerState {
@@ -198,6 +227,10 @@ export interface RoomPlayerState {
   seat: number
   online: boolean
   score: number
+  /** 电脑玩家 */
+  isBot: boolean
+  /** 托管中（本人把回合交给服务器自动打） */
+  delegated: boolean
 }
 
 export interface RoomState {
@@ -211,6 +244,8 @@ export interface RoomState {
   sessionEndsAt: number | null
   /** 自动开局下一局的时刻（绝对 ms）；局间等待期非 null */
   nextGameAt: number | null
+  /** 本场累计结算结果；进行中或尚未开始为 null */
+  sessionSummary: SessionSummary | null
 }
 
 export interface RoomListEntry {
@@ -240,9 +275,17 @@ export interface ClientMessages {
   'room.leave': Record<string, never>
   'room.config': { config: RoomConfig }
   'room.start': Record<string, never>
+  'room.addBot': Record<string, never>
+  'room.removeBot': { userId: number }
+  /** 解散房间（仅房主 + 等待态：全员回大厅、电脑回空闲池、房间即刻关闭） */
+  'room.dissolve': Record<string, never>
   'game.play': { cardIds: number[]; decl: Decl }
   'game.pass': Record<string, never>
   'game.sync': Record<string, never>
+  /** 托管开关（仅影响本人；任意房间状态可用） */
+  'game.delegate': { delegated: boolean }
+  /** 本场加时（仅房主；本场进行中可多次追加） */
+  'session.extend': { minutes: number }
 }
 
 export interface ServerMessages {
@@ -255,6 +298,7 @@ export interface ServerMessages {
   'game.state': PublicGameState
   'game.hand': { seat: number; hand: Card[] }
   'game.over': { result: GameResult; hands: { seat: number; cards: Card[] }[] }
+  'session.final': SessionSummary
 }
 
 /** 关闭码约定（grand_strategy 同款思路） */

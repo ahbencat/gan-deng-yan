@@ -93,6 +93,7 @@ function clamp(): void {
 }
 select,
 input[type='number'] {
+  width: 100%;
   padding: 8px 10px;
   border: 1px solid #ccc;
   border-radius: 8px;
@@ -102,5 +103,12 @@ input[type='number'] {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+@media (max-width: 640px) {
+  /* 窄屏两列数字输入换行单列，避免溢出 */
+  .row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -25,7 +25,8 @@ db.exec(`
     wins INTEGER NOT NULL DEFAULT 0,
     current_room_id INTEGER,
     created_at INTEGER NOT NULL,
-    last_login_at INTEGER
+    last_login_at INTEGER,
+    is_bot INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS rooms (
@@ -34,7 +35,9 @@ db.exec(`
     status TEXT NOT NULL CHECK(status IN ('waiting','playing','closed')),
     config_json TEXT NOT NULL,
     last_result_json TEXT,
+    session_started_at INTEGER,
     session_ends_at INTEGER,
+    session_summary_json TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -75,10 +78,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_game_players_user ON game_players(user_id);
 `)
 
-// 旧库迁移：本场截止时刻列
+// 旧库迁移：本场相关列
 const roomCols = db.prepare('PRAGMA table_info(rooms)').all() as unknown as { name: string }[]
 if (!roomCols.some((c) => c.name === 'session_ends_at')) {
   db.exec('ALTER TABLE rooms ADD COLUMN session_ends_at INTEGER')
+}
+if (!roomCols.some((c) => c.name === 'session_started_at')) {
+  db.exec('ALTER TABLE rooms ADD COLUMN session_started_at INTEGER')
+}
+if (!roomCols.some((c) => c.name === 'session_summary_json')) {
+  db.exec('ALTER TABLE rooms ADD COLUMN session_summary_json TEXT')
+}
+
+// 旧库迁移：电脑玩家标记
+const userCols = db.prepare('PRAGMA table_info(users)').all() as unknown as { name: string }[]
+if (!userCols.some((c) => c.name === 'is_bot')) {
+  db.exec('ALTER TABLE users ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0')
 }
 
 /** 事务助手：失败自动回滚（node:sqlite 同步执行，单线程无竞态） */

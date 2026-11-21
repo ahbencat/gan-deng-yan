@@ -19,8 +19,11 @@ onMounted(() => {
     <RoomView v-else-if="store.phase === 'room'" />
     <GameView v-else />
 
-    <div v-if="store.connection === 'reconnecting'" class="banner warn">重连中…</div>
+    <div v-if="store.connection === 'reconnecting'" class="banner warn">
+      <span class="icon" style="--i: url('/images/icons/warn.svg')"></span>重连中…
+    </div>
     <div v-if="store.lastError" class="banner error" @click="clearError()">
+      <span class="icon" style="--i: url('/images/icons/error.svg')"></span>
       {{ store.lastError }}
     </div>
   </div>
@@ -29,6 +32,7 @@ onMounted(() => {
 <style scoped>
 .app {
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
 }
 .boot {
@@ -36,6 +40,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   height: 100vh;
+  height: 100dvh;
   color: #888;
 }
 .banner {
@@ -46,6 +51,9 @@ onMounted(() => {
   padding: 8px 20px;
   border-radius: 8px;
   font-size: 14px;
+  /* 长错误文案不许把页面撑出横向滚动 */
+  max-width: calc(100vw - 24px);
+  text-align: center;
   z-index: 1000;
   cursor: pointer;
   box-shadow: 0 2px 8px rgb(0 0 0 / 20%);

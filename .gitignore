@@ -12,6 +12,10 @@ dist-ssr
 data
 temp
 .secret
+.env
+
+# 图片素材生成参考（占位副本 + 规格，素材定稿走 public/）
+_resource
 
 # Editor directories and files
 .vscode/*

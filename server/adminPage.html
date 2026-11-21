@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>干瞪眼 · 账号管理</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #f4f6f8;
+    color: #222;
+    font: 14px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 12px;
+    padding: 28px 28px 24px;
+    width: 100%;
+    max-width: 860px;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 5%);
+  }
+  h1 { margin: 0; font-size: 22px; }
+  .sub { margin: 6px 0 0; color: #888; font-size: 13px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+
+  form.login { max-width: 340px; margin-top: 24px; }
+  label { display: block; font-size: 13px; color: #555; margin-bottom: 12px; }
+  input {
+    width: 100%;
+    margin-top: 4px;
+    padding: 9px 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  input:focus { outline: 2px solid #4a90d9; outline-offset: -1px; border-color: #4a90d9; }
+  button {
+    padding: 9px 18px;
+    border: none;
+    border-radius: 8px;
+    background: #4a90d9;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:hover { background: #3a7bc0; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: #f0f0f0; color: #555; }
+  button.ghost:hover { background: #e4e4e4; }
+  button.danger { background: #ef5350; padding: 5px 12px; font-size: 13px; }
+  button.danger:hover { background: #e53935; }
+  button.danger:disabled { background: #eee; color: #999; }
+
+  .error { color: #d32f2f; font-size: 13px; min-height: 18px; margin: 8px 0 0; }
+  .banner { margin-top: 16px; padding: 9px 14px; border-radius: 8px; font-size: 13px; background: #e8f5e9; color: #2e7d32; }
+  .banner.err { background: #ffebee; color: #c62828; }
+  .banner[hidden] { display: none; }
+
+  .create { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 20px; padding-top: 18px; border-top: 1px solid #eee; }
+  .create label { margin: 0; flex: 1; min-width: 140px; }
+  .create .act { display: flex; gap: 8px; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+  /* 表格比屏宽时容器内横向滚动，页面本身不横溢出 */
+  .table-wrap { overflow-x: auto; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid #eee; text-align: left; white-space: nowrap; }
+  th { color: #888; font-weight: 600; background: #fafafa; }
+  td.num, th.num { text-align: right; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 4px; margin-left: 6px; }
+  .tag.bot { background: #c5cae9; color: #283593; }
+  .tag.room { background: #ffe0b2; color: #e65100; }
+  .muted { color: #999; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+  .note { color: #999; font-size: 12px; margin-top: 14px; }
+
+  @media (max-width: 640px) {
+    body { padding: 16px; }
+    .card { padding: 18px 16px; }
+    .create label { min-width: 120px; }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <!-- 密码表单 -->
+    <div id="login-view">
+      <h1>干瞪眼 · 账号管理</h1>
+      <p class="sub">输入管理密码进入（管理员不参与游戏对局）</p>
+      <form class="login" id="login-form">
+        <label>
+          管理密码
+          <input type="password" id="password" autocomplete="current-password" placeholder="管理密码" />
+        </label>
+        <button type="submit" id="login-btn">进入管理</button>
+        <p class="error" id="login-error"></p>
+      </form>
+    </div>
+
+    <!-- 管理面板 -->
+    <div id="panel-view" hidden>
+      <div class="header">
+        <div>
+          <h1>干瞪眼 · 账号管理</h1>
+          <p class="sub">管理员不参与游戏对局 · 密码见 .env</p>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="ghost" id="refresh-btn">刷新</button>
+          <button class="ghost" id="logout-btn">退出管理</button>
+        </div>
+      </div>
+
+      <div class="banner" id="banner" hidden></div>
+
+      <form class="create" id="create-form">
+        <label>用户名
+          <input id="new-username" placeholder="用户名" maxlength="32" required />
+        </label>
+        <label>密码
+          <input id="new-password" type="password" placeholder="至少 4 位" minlength="4" required />
+        </label>
+        <label>昵称（可选）
+          <input id="new-nickname" placeholder="缺省=用户名" maxlength="32" />
+        </label>
+        <div class="act"><button type="submit">创建账号</button></div>
+      </form>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>用户名</th><th>昵称</th>
+              <th class="num">分数</th><th class="num">局数</th><th class="num">胜场</th>
+              <th>类型</th><th>状态</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="user-rows"></tbody>
+        </table>
+      </div>
+      <p class="note">删除保护：电脑账号不可删；在房间中的玩家不可删。删除账号不影响已结算对局记录，但进行中本场的排名不再包含该账号。</p>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id)
+let bannerTimer = null
+
+function showLogin(msg) {
+  $('login-view').hidden = false
+  $('panel-view').hidden = true
+  $('login-error').textContent = msg || ''
+}
+function showPanel() {
+  $('login-view').hidden = true
+  $('panel-view').hidden = false
+}
+function banner(msg, isErr) {
+  const el = $('banner')
+  el.textContent = msg
+  el.classList.toggle('err', !!isErr)
+  el.hidden = false
+  if (bannerTimer) clearTimeout(bannerTimer)
+  bannerTimer = setTimeout(() => { el.hidden = true }, 4000)
+}
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+async function api(path, opts) {
+  const res = await fetch(path, opts)
+  let data = null
+  try { data = await res.json() } catch { /* 非 JSON */ }
+  if (res.status === 401) {
+    showLogin((data && data.error) || '需要管理员登录')
+    throw new Error((data && data.error) || '需要管理员登录')
+  }
+  if (!res.ok) throw new Error((data && data.error) || '请求失败 (' + res.status + ')')
+  return data
+}
+const jsonOpts = (method, body) => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+})
+
+function render(users) {
+  const tb = $('user-rows')
+  tb.innerHTML = users.map((u) => {
+    const tags =
+      (u.isBot ? '<span class="tag bot">电脑</span>' : '') +
+      (u.inRoom ? '<span class="tag room">在房间</span>' : '')
+    const delTitle = u.isBot ? '电脑账号不可删除'
+      : u.inRoom ? '该玩家在房间中，不能删除' : ''
+    const del = u.isBot || u.inRoom
+      ? '<button class="danger" disabled title="' + delTitle + '">删除</button>'
+      : '<button class="danger" data-del="' + u.id + '" data-name="' + esc(u.username) + '">删除</button>'
+    return '<tr>' +
+      '<td>' + u.id + '</td>' +
+      '<td>' + esc(u.username) + '</td>' +
+      '<td>' + esc(u.nickname) + tags + '</td>' +
+      '<td class="num">' + u.score + '</td>' +
+      '<td class="num">' + u.gamesPlayed + '</td>' +
+      '<td class="num">' + u.wins + '</td>' +
+      '<td>' + (u.isBot ? '电脑' : '真人') + '</td>' +
+      '<td>' + (u.inRoom ? '<span class="muted">在房间</span>' : '<span class="muted">空闲</span>') + '</td>' +
+      '<td>' + del + '</td>' +
+      '</tr>'
+  }).join('') || '<tr><td colspan="9" class="muted">暂无账号</td></tr>'
+}
+
+async function refresh() {
+  const data = await api('/api/admin/users')
+  render(data.users)
+}
+
+// ---- 事件绑定 ----
+$('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  $('login-error').textContent = ''
+  $('login-btn').disabled = true
+  try {
+    const res = await fetch('/api/admin/login', jsonOpts('POST', { password: $('password').value }))
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      $('login-error').textContent = (data && data.error) || '登录失败'
+      return
+    }
+    $('password').value = ''
+    await refresh()
+    showPanel()
+  } catch (err) {
+    $('login-error').textContent = err.message
+  } finally {
+    $('login-btn').disabled = false
+  }
+})
+
+$('create-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  try {
+    const data = await api('/api/admin/users', jsonOpts('POST', {
+      username: $('new-username').value,
+      password: $('new-password').value,
+      nickname: $('new-nickname').value,
+    }))
+    banner('已创建账号：' + data.user.username + '（' + data.user.nickname + '）')
+    $('new-username').value = ''
+    $('new-password').value = ''
+    $('new-nickname').value = ''
+    await refresh()
+  } catch (err) {
+    banner(err.message, true)
+  }
+})
+
+$('user-rows').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-del]')
+  if (!btn) return
+  const id = btn.getAttribute('data-del')
+  const name = btn.getAttribute('data-name')
+  if (!confirm('确认删除账号「' + name + '」？此操作不可恢复（历史对局记录保留）')) return
+  try {
+    await api('/api/admin/users/' + id, { method: 'DELETE' })
+    banner('已删除账号：' + name)
+    await refresh()
+  } catch (err) {
+    banner(err.message, true)
+  }
+})
+
+$('refresh-btn').addEventListener('click', async () => {
+  try { await refresh(); banner('已刷新') } catch (err) { banner(err.message, true) }
+})
+
+$('logout-btn').addEventListener('click', async () => {
+  await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {})
+  showLogin()
+})
+
+// 进入页面：有有效 cookie → 直接进面板，否则显示密码表单
+;(async () => {
+  try {
+    await refresh()
+    showPanel()
+  } catch (err) {
+    // 401 已由 api() 切到登录视图；网络错误显示在表单
+    if (!$('login-error').textContent) $('login-error').textContent = err.message
+  }
+})()
+</script>
+</body>
+</html>

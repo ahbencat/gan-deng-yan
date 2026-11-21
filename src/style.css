@@ -1,7 +1,12 @@
 :root {
-  color-scheme: light dark;
+  /* 本作 UI 全浅色（白面板/浅底纹）：只声明 light，
+     避免系统暗色下 UA 默认文字变白 → 白底牌面/白面板白字隐形 */
+  color-scheme: light;
   font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   line-height: 1.5;
+  /* 禁止移动浏览器自动放大字号 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 * {
@@ -11,4 +16,33 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  /* 页面底纹（登录/大厅/房间共用；对局页 .game 自有背景覆盖）。
+     图片缺失时底色兜底 */
+  background:
+    url('/images/bg/page.png') center / 512px repeat fixed,
+    #f5f5f7;
+}
+
+/* 图标蒙版：svg 提供形状（--i），颜色继承 currentColor。
+   用 mask 而非 <img>，保证深色背景/彩色徽标上图标跟着文字变色 */
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.15em;
+  margin-right: 0.2em;
+  background: currentColor;
+  -webkit-mask: var(--i) center / contain no-repeat;
+  mask: var(--i) center / contain no-repeat;
+}
+/* 圆形徽标内的图标居中，不吃右侧间距 */
+.dealer .icon {
+  margin-right: 0;
+}
+
+/* 消除触摸双击缩放与点击延迟 */
+button {
+  touch-action: manipulation;
 }

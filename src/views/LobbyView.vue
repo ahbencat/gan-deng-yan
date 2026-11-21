@@ -40,6 +40,11 @@ async function logout(): Promise<void> {
     store.lobbyRooms = []
   }
 }
+
+/** 插画加载失败 → 隐藏，不影响布局 */
+function hideBrokenImg(e: Event) {
+  ;(e.target as HTMLImageElement).style.display = 'none'
+}
 </script>
 
 <template>
@@ -50,17 +55,24 @@ async function logout(): Promise<void> {
         <span class="stats">{{ stats }}</span>
       </div>
       <div class="actions">
-        <button class="ghost" @click="refresh()">刷新</button>
-        <button class="ghost" @click="logout()">退出登录</button>
-        <button @click="showCreate = true">创建房间</button>
+        <button class="ghost" @click="refresh()">
+          <span class="icon" style="--i: url('/images/icons/refresh.svg')"></span>刷新
+        </button>
+        <button class="ghost" @click="logout()">
+          <span class="icon" style="--i: url('/images/icons/logout.svg')"></span>退出登录
+        </button>
+        <button @click="showCreate = true">
+          <span class="icon" style="--i: url('/images/icons/plus.svg')"></span>创建房间
+        </button>
       </div>
     </header>
 
     <main>
       <h2>房间列表</h2>
-      <p v-if="store.lobbyRooms.length === 0" class="empty">
-        暂无房间，点击右上角「创建房间」开一桌
-      </p>
+      <div v-if="store.lobbyRooms.length === 0" class="empty">
+        <img class="empty-art" src="/images/art/empty.png" alt="" @error="hideBrokenImg" />
+        <p>暂无房间，点击右上角「创建房间」开一桌</p>
+      </div>
       <ul class="rooms">
         <li v-for="r in store.lobbyRooms" :key="r.id">
           <div class="info">
@@ -108,6 +120,8 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 20px;
 }
 .me {
@@ -122,6 +136,7 @@ header {
 .actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 h2 {
   font-size: 18px;
@@ -130,6 +145,18 @@ h2 {
 .empty {
   color: #999;
   font-size: 14px;
+  text-align: center;
+  padding: 24px 0;
+}
+.empty p {
+  margin: 0;
+}
+.empty-art {
+  display: block;
+  width: 160px;
+  height: auto;
+  opacity: 0.6;
+  margin: 0 auto 10px;
 }
 .rooms {
   list-style: none;
@@ -223,7 +250,9 @@ button.ghost:hover {
   border-radius: 12px;
   padding: 24px;
   width: 380px;
+  max-width: 94vw;
   max-height: 90vh;
+  max-height: 90dvh;
   overflow: auto;
 }
 .dialog h3 {
@@ -234,5 +263,20 @@ button.ghost:hover {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 18px;
+}
+
+@media (max-width: 640px) {
+  .lobby {
+    padding: 12px;
+  }
+  .rooms li {
+    padding: 12px;
+  }
+  .info {
+    gap: 8px;
+  }
+  .dialog {
+    padding: 20px;
+  }
 }
 </style>

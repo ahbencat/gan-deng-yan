@@ -5,11 +5,17 @@ import type {
   RoomConfig,
   RoomListEntry,
   RoomState,
+  SessionSummary,
   UserPublic,
 } from '../src/types.js'
 import { DEFAULT_ROOM_CONFIG, ROOM_CONFIG_RANGE } from '../src/types.js'
 import { db, tx } from './db.js'
-import { setCurrentRoom } from './users.js'
+import { NPC_ROSTER } from './npc.js'
+import {
+  findUserByUsername,
+  setCurrentRoom,
+  toPublic,
+} from './users.js'
 import type { GameSession } from './gameSession.js'
 
 export interface RoomPlayer {
@@ -17,6 +23,8 @@ export interface RoomPlayer {
   nickname: string
   seat: number
   score: number
+  /** 电脑玩家（服务器驱动出牌） */
+  isBot: boolean
 }
 
 export interface Room {
@@ -28,11 +36,19 @@ export interface Room {
   players: Map<number, RoomPlayer>
   lastResult: GameResult | null
   session: GameSession | null
+  /** 本场首局开局时刻（绝对 ms）；null=未开本场 */
+  sessionStartedAt: number | null
   /** 本场截止时刻（绝对 ms）；null=未开局/本场已结束 */
   sessionEndsAt: number | null
+  /** 本场结束后的累计排名；进行中或尚未开始为 null */
+  sessionSummary: SessionSummary | null
   /** 自动开局下一局的时刻；局间等待期非 null */
   nextGameAt: number | null
   nextGameTimer: ReturnType<typeof setTimeout> | null
+  /** 等待态本场到点定时器（到点即 finalize 本场） */
+  sessionTimer: ReturnType<typeof setTimeout> | null
+  /** 托管中的 userId（内存态，不落库；重启即重置为关） */
+  delegated: Set<number>
 }
 
 /** 校验并归一化房间配置；非法返回 null */
@@ -100,8 +116,10 @@ class RoomManager {
         userId: p.userId,
         nickname: p.nickname,
         seat: p.seat,
-        online: online.has(p.userId),
+        online: online.has(p.userId) || p.isBot,
         score: p.score,
+        isBot: p.isBot,
+        delegated: room.delegated.has(p.userId),
       }))
     return {
       id: room.id,
@@ -112,6 +130,7 @@ class RoomManager {
       lastResult: room.lastResult,
       sessionEndsAt: room.sessionEndsAt,
       nextGameAt: room.nextGameAt,
+      sessionSummary: room.sessionSummary,
     }
   }
 
@@ -144,13 +163,20 @@ class RoomManager {
       status: 'waiting',
       config,
       players: new Map([
-        [host.id, { userId: host.id, nickname: host.nickname, seat: 0, score: host.score }],
+        [
+          host.id,
+          { userId: host.id, nickname: host.nickname, seat: 0, score: host.score, isBot: host.isBot },
+        ],
       ]),
       lastResult: null,
       session: null,
+      sessionStartedAt: null,
       sessionEndsAt: null,
+      sessionSummary: null,
       nextGameAt: null,
       nextGameTimer: null,
+      sessionTimer: null,
+      delegated: new Set(),
     }
     this.rooms.set(room, newRoom)
     return newRoom
@@ -189,8 +215,48 @@ class RoomManager {
       nickname: user.nickname,
       seat,
       score: user.score,
+      isBot: user.isBot,
     })
     return { ok: true, room }
+  }
+
+  /**
+   * 添加电脑（仅等待态 + 未满；host 校验在 dispatch）。
+   * 只从 7 个固定 NPC 花名册按序取第一个空闲者（锚点空 + 交叉 getByUser 防崩溃间隙）；
+   * 全部在场则报错，不再新建 bot_N。
+   */
+  addBot(roomId: number): { ok: true; room: Room } | { ok: false; error: string } {
+    const room = this.get(roomId)
+    if (!room) return { ok: false, error: '房间不存在或已关闭' }
+    if (room.status !== 'waiting') return { ok: false, error: '对局进行中，不能添加电脑' }
+    if (room.players.size >= room.config.maxPlayers) return { ok: false, error: '房间已满' }
+
+    for (const def of NPC_ROSTER) {
+      const row = findUserByUsername(def.username)
+      if (row && row.current_room_id == null && !this.getByUser(row.id)) {
+        return this.join(roomId, toPublic(row))
+      }
+    }
+    return { ok: false, error: '没有空闲电脑（7 台电脑均在其他房间）' }
+  }
+
+  /**
+   * 移除电脑（仅等待态；只脱离房间，保留 users 行 → 保住 game_players 历史与零和）。
+   * host 校验在 dispatch。
+   */
+  removeBot(room: Room, userId: number): { ok: true } | { ok: false; error: string } {
+    if (room.status !== 'waiting') return { ok: false, error: '对局进行中，不能移除电脑' }
+    const p = room.players.get(userId)
+    if (!p || !p.isBot) return { ok: false, error: '该玩家不是电脑' }
+    const now = Date.now()
+    tx(() => {
+      db.prepare(`DELETE FROM room_players WHERE room_id = ? AND user_id = ?`).run(room.id, userId)
+      db.prepare(`UPDATE rooms SET updated_at = ? WHERE id = ?`).run(now, room.id)
+    })
+    setCurrentRoom(userId, null)
+    room.players.delete(userId)
+    room.delegated.delete(userId)
+    return { ok: true }
   }
 
   /** 离开（仅等待态）；房主转移给座位最小者；空房关闭 */
@@ -210,14 +276,19 @@ class RoomManager {
       db.prepare(`UPDATE rooms SET updated_at = ? WHERE id = ?`).run(now, room.id)
     })
     setCurrentRoom(userId, null)
+    room.delegated.delete(userId)
 
-    if (room.players.size === 0) {
+    // 无真人 → 关房（bot 锚点随 closeRoom 清空，回空闲池）
+    const humans = [...room.players.values()]
+      .filter((p) => !p.isBot)
+      .sort((a, b) => a.seat - b.seat)
+    if (humans.length === 0) {
       this.closeRoom(room.id)
       return { ok: true, roomId: room.id, closed: true }
     }
-    // 房主转移：座位最小者
+    // 房主转移：座位最小的真人
     if (room.hostUserId === userId) {
-      const nextHost = [...room.players.values()].sort((a, b) => a.seat - b.seat)[0]
+      const nextHost = humans[0]
       room.hostUserId = nextHost.userId
       db.prepare(`UPDATE rooms SET host_user_id = ?, updated_at = ? WHERE id = ?`).run(
         nextHost.userId,
@@ -275,6 +346,17 @@ class RoomManager {
     }
   }
 
+  /**
+   * 解散房间（房主 + 等待态，dispatch 已校验）：
+   * 清 room_players 滞留行（对局历史在 game_players，不受影响）→ closeRoom
+   * （清 nextGame/session 定时器、清锚点让电脑回空闲池、删内存项、落库 closed）。
+   * 调用方负责先向成员广播 room.closed 再调用本方法。
+   */
+  dissolve(roomId: number): void {
+    db.prepare(`DELETE FROM room_players WHERE room_id = ?`).run(roomId)
+    this.closeRoom(roomId)
+  }
+
   closeRoom(roomId: number): void {
     const room = this.rooms.get(roomId)
     if (!room) return
@@ -286,6 +368,10 @@ class RoomManager {
       room.nextGameTimer = null
     }
     room.nextGameAt = null
+    if (room.sessionTimer) {
+      clearTimeout(room.sessionTimer)
+      room.sessionTimer = null
+    }
     db.prepare(`UPDATE rooms SET status = 'closed', updated_at = ? WHERE id = ?`).run(
       Date.now(),
       roomId,
@@ -305,11 +391,21 @@ class RoomManager {
       status: string
       config_json: string
       last_result_json: string | null
+      session_started_at?: number | null
       session_ends_at?: number | null
+      session_summary_json?: string | null
     },
     players: RoomPlayer[],
   ): void {
     const config = sanitizeConfig(JSON.parse(row.config_json)) ?? defaultConfig()
+    let sessionSummary: SessionSummary | null = null
+    if (row.session_summary_json) {
+      try {
+        sessionSummary = JSON.parse(row.session_summary_json) as SessionSummary
+      } catch {
+        sessionSummary = null // 坏 JSON 兜底
+      }
+    }
     const room: Room = {
       id: row.id,
       hostUserId: row.host_user_id,
@@ -318,13 +414,21 @@ class RoomManager {
       players: new Map(players.map((p) => [p.userId, p])),
       lastResult: row.last_result_json ? (JSON.parse(row.last_result_json) as GameResult) : null,
       session: null,
+      sessionStartedAt: row.session_started_at ?? null,
       sessionEndsAt: row.session_ends_at ?? null,
+      sessionSummary,
       nextGameAt: null,
       nextGameTimer: null,
+      sessionTimer: null,
+      delegated: new Set(),
     }
-    // 房主不在座（异常）→ 转给座位最小者
-    if (!room.players.has(room.hostUserId) && room.players.size > 0) {
-      room.hostUserId = [...room.players.values()].sort((a, b) => a.seat - b.seat)[0].userId
+    // 房主不在座或房主是 bot → 转给座位最小的真人；无真人则留给 restore 关纯 bot 房
+    const host = room.players.get(room.hostUserId)
+    if (!host || host.isBot) {
+      const humans = [...room.players.values()]
+        .filter((p) => !p.isBot)
+        .sort((a, b) => a.seat - b.seat)
+      if (humans.length > 0) room.hostUserId = humans[0].userId
     }
     this.rooms.set(room.id, room)
   }
@@ -334,10 +438,15 @@ class RoomManager {
     return [...this.rooms.values()]
   }
 
-  /** 持久化本场截止时刻（null=本场结束） */
-  saveSessionEnds(room: Room): void {
-    db.prepare('UPDATE rooms SET session_ends_at = ?, updated_at = ? WHERE id = ?').run(
+  /** 持久化本场三件套（开始/截止/累计结算；null=对应状态未开或已结束） */
+  saveSession(room: Room): void {
+    db.prepare(
+      `UPDATE rooms SET session_started_at = ?, session_ends_at = ?, session_summary_json = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      room.sessionStartedAt,
       room.sessionEndsAt,
+      room.sessionSummary ? JSON.stringify(room.sessionSummary) : null,
       Date.now(),
       room.id,
     )

@@ -25,11 +25,17 @@ async function submit(): Promise<void> {
     loading.value = false
   }
 }
+
+/** Logo 加载失败 → 隐藏，只留 h1 标题 */
+function hideBrokenImg(e: Event) {
+  ;(e.target as HTMLImageElement).style.display = 'none'
+}
 </script>
 
 <template>
   <div class="login">
     <div class="card">
+      <img class="logo" src="/images/logo.png" alt="干瞪眼" @error="hideBrokenImg" />
       <h1>干瞪眼</h1>
       <p class="sub">登录后继续你的对局</p>
       <form @submit.prevent="submit()">
@@ -64,13 +70,22 @@ async function submit(): Promise<void> {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
+  padding: 16px;
 }
 .card {
-  width: 340px;
+  width: min(340px, 100%);
   padding: 32px 28px;
   background: var(--panel, #fff);
   border-radius: 12px;
   box-shadow: 0 4px 24px rgb(0 0 0 / 10%);
+}
+.logo {
+  width: 80px;
+  height: 80px;
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 18px;
 }
 h1 {
   margin: 0 0 4px;
@@ -131,5 +146,14 @@ button:not(:disabled):hover {
   text-align: center;
   color: #aaa;
   font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .login {
+    padding: 12px;
+  }
+  .card {
+    padding: 24px 20px;
+  }
 }
 </style>

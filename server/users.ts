@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { GameResult, UserPublic } from '../src/types.js'
 import { db, tx } from './db.js'
 
@@ -12,6 +13,7 @@ export interface UserRow {
   current_room_id: number | null
   created_at: number
   last_login_at: number | null
+  is_bot: number
 }
 
 const stmts = {
@@ -38,6 +40,7 @@ export function toPublic(row: UserRow): UserPublic {
     score: row.score,
     gamesPlayed: row.games_played,
     wins: row.wins,
+    isBot: !!row.is_bot,
   }
 }
 
@@ -52,6 +55,23 @@ export function setCurrentRoom(userId: number, roomId: number | null): void {
 /** 清理指向不存在房间的恢复锚点（恢复流程调用） */
 export function clearCurrentRoomFor(roomId: number): void {
   stmts.clearOrphanRooms.run(roomId)
+}
+
+// ---- 电脑账号（只增不删：detach 不 delete，保住 game_players 历史与零和）----
+
+/**
+ * 新建 bot 账号。password_hash 为无分隔符的随机 hex —— verifyPassword 结构性失败，
+ * 且登录路由显式拒绝 is_bot；用户名/昵称由调用方保证唯一（现由 npc.ts 花名册调用）。
+ */
+export function insertBotUser(username: string, nickname: string): UserRow {
+  const hash = randomBytes(32).toString('hex')
+  const res = db
+    .prepare(
+      `INSERT INTO users (username, password_hash, nickname, score, games_played, wins, created_at, is_bot)
+       VALUES (?, ?, ?, 0, 0, 0, ?, 1)`,
+    )
+    .run(username, hash, nickname, Date.now())
+  return getUserById(Number(res.lastInsertRowid))!
 }
 
 /**

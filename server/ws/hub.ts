@@ -45,6 +45,17 @@ export class Hub {
     return this.byConn.get(ws)?.userId ?? null
   }
 
+  /** 主动断开某用户当前连接（如账号被管理员删除）；close 事件走既有 unregister */
+  kick(userId: number, code: number, reason: string): void {
+    const conn = this.byUser.get(userId)
+    if (!conn) return
+    try {
+      conn.ws.close(code, reason)
+    } catch {
+      // 忽略关闭异常
+    }
+  }
+
   isOnline(userId: number): boolean {
     return this.byUser.has(userId)
   }

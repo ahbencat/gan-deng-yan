@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { configSummary } from '../label.js'
-import { send, serverNow, store } from '../store.js'
+import { openFinalSummary, send, serverNow, store } from '../store.js'
 import ConfigForm from '../components/ConfigForm.vue'
+import ExtendDialog from '../components/ExtendDialog.vue'
+import ResultDialog from '../components/ResultDialog.vue'
 import { DEFAULT_ROOM_CONFIG, type RoomConfig } from '../types.js'
 
 const editing = ref(false)
 const editConfig = ref<RoomConfig>({ ...DEFAULT_ROOM_CONFIG })
+const showExtendDialog = ref(false)
 
 const room = computed(() => store.room)
 const isHost = computed(() => store.user?.id === room.value?.hostUserId)
 const canStart = computed(() => (room.value?.players.length ?? 0) >= 2)
+const iAmDelegated = computed(
+  () => room.value?.players.find((p) => p.userId === store.user?.id)?.delegated ?? false,
+)
 
 const lastResult = computed(() => room.value?.lastResult ?? null)
 const winnerName = computed(() => {
@@ -21,6 +27,11 @@ const winnerName = computed(() => {
 
 function playerName(userId: number): string {
   return room.value?.players.find((p) => p.userId === userId)?.nickname ?? String(userId)
+}
+
+/** 头像加载失败 → 隐藏，名字照常显示 */
+function hideBrokenImg(e: Event) {
+  ;(e.target as HTMLImageElement).style.display = 'none'
 }
 
 function startEdit(): void {
@@ -42,6 +53,23 @@ function leave(): void {
   send('room.leave', {})
 }
 
+function addBot(): void {
+  send('room.addBot', {})
+}
+
+function removeBot(userId: number): void {
+  send('room.removeBot', { userId })
+}
+
+function cancelDelegate(): void {
+  send('game.delegate', { delegated: false })
+}
+
+function doExtend(minutes: number): void {
+  send('session.extend', { minutes })
+  showExtendDialog.value = false
+}
+
 // 本场剩余 / 自动开局倒计时
 const tick = ref(serverNow())
 let timer: ReturnType<typeof setInterval> | null = null
@@ -58,10 +86,16 @@ const sessionRemain = computed(() => {
   const ends = room.value?.sessionEndsAt
   return ends != null ? Math.max(0, ends - tick.value) : null
 })
-const nextIn = computed(() => {
-  const at = room.value?.nextGameAt
-  return at != null ? Math.max(0, Math.ceil((at - tick.value) / 1000)) : null
-})
+const nextGameAt = computed(() => room.value?.nextGameAt ?? null)
+/** 局间纯文字倒计时（洗牌动画只在打牌界面，房间不放动画） */
+const nextGameSecs = computed(() =>
+  nextGameAt.value != null
+    ? Math.ceil(Math.max(0, nextGameAt.value - tick.value) / 1000)
+    : null,
+)
+const sessionExpiredWaiting = computed(
+  () => room.value?.sessionEndsAt != null && sessionRemain.value === 0,
+)
 
 function fmtMs(ms: number): string {
   const s = Math.ceil(ms / 1000)
@@ -76,12 +110,39 @@ function fmtMs(ms: number): string {
         <h2>房间 #{{ room.id }}</h2>
         <p class="cfg">
           {{ configSummary(room.config) }}
-          <template v-if="sessionRemain != null"> · 本场剩余 {{ fmtMs(sessionRemain) }}</template>
+          <template v-if="sessionRemain != null && !sessionExpiredWaiting">
+            · 本场剩余 {{ fmtMs(sessionRemain) }}
+          </template>
+          <template v-else-if="sessionExpiredWaiting"> · 本场时间已到</template>
         </p>
-        <p v-if="nextIn != null" class="auto-next">{{ nextIn }} 秒后自动开局下一场</p>
+        <p v-if="nextGameSecs != null" class="next-hint">
+          {{ nextGameSecs }} 秒后自动开局
+        </p>
       </div>
       <div class="actions">
         <button v-if="isHost && !editing" class="ghost" @click="startEdit()">修改配置</button>
+        <button
+          v-if="isHost && !editing && room.players.length < room.config.maxPlayers"
+          class="ghost"
+          @click="addBot()"
+        >
+          添加电脑
+        </button>
+        <button
+          v-if="room.sessionSummary"
+          class="ghost"
+          @click="openFinalSummary(room.sessionSummary)"
+        >
+          查看本场结算
+        </button>
+        <button v-if="iAmDelegated" class="ghost" @click="cancelDelegate()">取消托管</button>
+        <button
+          v-if="isHost && room.sessionEndsAt != null"
+          class="ghost"
+          @click="showExtendDialog = true"
+        >
+          加时
+        </button>
         <button class="ghost" @click="leave()">离开房间</button>
         <button v-if="isHost && canStart && !editing" @click="startGame()">开始游戏</button>
       </div>
@@ -99,18 +160,52 @@ function fmtMs(ms: number): string {
     <ul class="players">
       <li v-for="p in room.players" :key="p.userId">
         <span class="seat">{{ p.seat + 1 }}号位</span>
+        <img
+          class="avatar-sm"
+          :src="p.isBot ? '/images/avatars/bot.png' : '/images/avatars/default.png'"
+          :alt="p.nickname"
+          @error="hideBrokenImg"
+        />
         <span class="name">
           {{ p.nickname }}
-          <em v-if="p.userId === room.hostUserId" class="host-tag">房主</em>
+          <em v-if="p.userId === room.hostUserId" class="host-tag"
+            ><span class="icon" style="--i: url('/images/icons/host.svg')"></span>房主</em
+          >
+          <em v-if="p.isBot" class="bot-tag"
+            ><span class="icon" style="--i: url('/images/icons/bot.svg')"></span>电脑</em
+          >
+          <em v-if="p.delegated && !p.isBot" class="delegated-tag"
+            ><span class="icon" style="--i: url('/images/icons/delegate.svg')"></span>托管</em
+          >
         </span>
         <span class="dot" :class="{ on: p.online }"></span>
         <span class="score">{{ p.score }}分</span>
+        <button
+          v-if="isHost && p.isBot && !editing"
+          class="ghost small"
+          @click="removeBot(p.userId)"
+        >
+          移除
+        </button>
       </li>
     </ul>
 
     <p v-if="room.players.length < 2" class="hint">等待其他玩家加入…（至少 2 人才能开始）</p>
     <p v-else-if="isHost" class="hint">点击「开始游戏」开局</p>
     <p v-else class="hint">等待房主开始游戏…</p>
+
+    <ResultDialog
+      v-if="store.finalSummary"
+      :result="null"
+      :hands="[]"
+      :summary="store.finalSummary"
+    />
+
+    <ExtendDialog
+      v-if="showExtendDialog"
+      @confirm="doExtend"
+      @cancel="showExtendDialog = false"
+    />
 
     <div v-if="lastResult" class="last">
       <h3>上局结果</h3>
@@ -152,15 +247,17 @@ h2 {
   color: #888;
   font-size: 13px;
 }
-.auto-next {
+/* 局间自动开局提示：纯文字（洗牌动画只在打牌界面） */
+.next-hint {
   margin: 6px 0 0;
-  color: #e65100;
+  color: #4a90d9;
   font-size: 13px;
-  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .edit-box {
   background: var(--panel, #fff);
@@ -190,19 +287,29 @@ h2 {
 .players li {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   background: var(--panel, #fff);
   border: 1px solid #e5e5e5;
   border-radius: 10px;
-  padding: 12px 16px;
+  padding: 10px 12px;
 }
 .seat {
   color: #999;
   font-size: 13px;
   width: 48px;
+  flex-shrink: 0;
+}
+.avatar-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 .name {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
 }
 .host-tag {
@@ -213,6 +320,28 @@ h2 {
   padding: 2px 6px;
   border-radius: 4px;
   margin-left: 6px;
+}
+.bot-tag {
+  font-style: normal;
+  font-size: 11px;
+  background: #c5cae9;
+  color: #283593;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+.delegated-tag {
+  font-style: normal;
+  font-size: 11px;
+  background: #ffe0b2;
+  color: #e65100;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+button.small {
+  padding: 5px 12px;
+  font-size: 13px;
 }
 .dot {
   width: 9px;
@@ -226,6 +355,7 @@ h2 {
 .score {
   color: #666;
   font-size: 14px;
+  flex-shrink: 0;
 }
 .hint {
   color: #888;
@@ -284,5 +414,15 @@ button.ghost {
 }
 button.ghost:hover {
   background: #e4e4e4;
+}
+
+@media (max-width: 640px) {
+  .room {
+    padding: 16px 12px;
+  }
+  .players li {
+    gap: 8px;
+    padding: 10px;
+  }
 }
 </style>

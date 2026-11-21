@@ -10,6 +10,8 @@ import {
   type RoomConfig,
   type SeatMeta,
 } from '../types.js'
+import { buildBrainContext, type BotBrain } from './brain.js'
+import { basicBrain } from './brains/basic.js'
 import { dealShuffled } from './cards.js'
 import { canForm } from './combo.js'
 import type { Rng } from './rng.js'
@@ -163,6 +165,27 @@ export function applyTimeout(state: GameState, now: number): ActionResult {
     return applyPlay(state, seat, cards.map((c) => c.id), decl, now)
   }
   return applyPass(state, seat, now)
+}
+
+/**
+ * 自动出牌（电脑/托管共用）：大脑 decide 产出意图 → applyPlay/applyPass 把关（输出不受信）。
+ * 缺省 basicBrain 与旧行为逐字节一致：领出最小合法牌；跟牌尝试最小压牌，压不过过牌。
+ * 非法输出/领出过牌意图均落入兜底，保证 onTimer 重挂循环不卡死。
+ * 内部读 turnSeat（仿 applyTimeout）；applyTimeout 语义保持不变。
+ */
+export function applyAutoMove(state: GameState, now: number, brain: BotBrain = basicBrain): ActionResult {
+  if (state.phase !== 'playing') return fail('对局已结束')
+  const seat = state.trick.turnSeat
+  const decision = brain.decide(buildBrainContext(state, seat))
+  if (decision) {
+    const r = applyPlay(state, seat, decision.cards.map((c) => c.id), decision.decl, now)
+    if (r.ok) return r
+    // 非法输出被 applyPlay 拒绝 → 落入兜底
+  }
+  if (state.trick.lastPlay !== null) return applyPass(state, seat, now)
+  // 领出兜底（大脑返回 null / 非法牌）：最小合法牌
+  const { cards, decl } = pickAutoPlay(state.hands[seat])
+  return applyPlay(state, seat, cards.map((c) => c.id), decl, now)
 }
 
 /** 对局总时长到期：剩牌最少者赢，并列流局（假设3） */
