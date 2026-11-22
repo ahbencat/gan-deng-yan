@@ -13,6 +13,8 @@ data
 temp
 .secret
 .env
+# 本机运维细节（路径/命令/测试账号密码），只留本地
+CLAUDE.local.md
 
 # 图片素材本地参考副本（正式素材定稿走 public/；规格文档在 docs/ASSETS.md，入库）
 _resource*
