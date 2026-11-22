@@ -19,7 +19,7 @@ import { mulberry32, systemSeed } from '../src/game/rng.js'
 import { projectPublic, projectSnapshot } from '../src/game/snapshot.js'
 import { db, tx } from './db.js'
 import { pushLobby, pushRoomState } from './notify.js'
-import { brainForUser } from './npc.js'
+import { brainForSeat } from './npc.js'
 import { rooms, type Room } from './roomManager.js'
 import { recordGameResult } from './users.js'
 import { hub } from './ws/hub.js'
@@ -434,7 +434,11 @@ export class GameSession {
     // auto 分支必须先于 deadline 判断：700ms 定时器永远早于 deadline 唤醒
     if (this.autoSeatSet().has(this.state.trick.turnSeat)) {
       const turnUserId = this.state.seats[this.state.trick.turnSeat]?.userId
-      const r = applyAutoMove(this.state, now, brainForUser(turnUserId ?? -1))
+      const r = applyAutoMove(
+        this.state,
+        now,
+        brainForSeat(rooms.get(this.roomId)?.players.get(turnUserId ?? -1)),
+      )
       if (r.ok) {
         this.commit(r.state)
         if (r.state.phase === 'finished') this.finish()

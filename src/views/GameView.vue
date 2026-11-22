@@ -28,9 +28,9 @@ const isShort = useIsShort()
 /** 环形小座位固定尺寸（与 PlayerSeat .seat.ring 对齐） */
 const RING_W = 250
 const RING_H = 40
-/** 中央出牌面板近似半宽/半高（TrickArea：560 宽，topbar44+stage156+log130+gap≈350 高） */
+/** 中央出牌面板近似半宽/半高（TrickArea：560 宽，topbar44+scores36+stage190+log94+3×gap10≈394 高） */
 const TRICK_HALF_W = 280
-const TRICK_HALF_H = 175
+const TRICK_HALF_H = 197
 /** 每局结算弹窗自动收起延时（局间 8s：先看 4s 结算，再露出桌面中央洗牌） */
 const RESULT_COLLAPSE_MS = 4000
 

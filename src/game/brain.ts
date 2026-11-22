@@ -1,8 +1,10 @@
 // 电脑大脑抽象：decide 只产出「意图」，合法性仍由 engine.applyPlay/applyPass 把关（输出不受信）
-// 扩展方式见 README「电脑大脑（BotBrain）」：新大脑放 src/game/brains/，在本文件注册，
-// 再把 server/npc.ts 花名册里对应 NPC 的 brainId 改掉。
+// 扩展方式见 README「电脑与大脑」：新大脑放 src/game/brains/，在本文件注册，
+// 再挂到 server/npc.ts 的 BRAIN_ID_BY_LEVEL 对应难度。
 import type { Card, Decl, GameState, Play, TrickLogEntry } from '../types.js'
 import { basicBrain } from './brains/basic.js'
+import { expertBrain } from './brains/expert.js'
+import { smartBrain } from './brains/smart.js'
 
 export interface BotDecision {
   cards: Card[]
@@ -19,6 +21,12 @@ export interface BotContext {
   multiplier: number
   /** 各座位剩牌数（下标 = seat） */
   handCounts: number[]
+  /** 自己座位（威胁扫描排除自己） */
+  seat: number
+  /** 牌堆百搭构成（2|3|4，推算未现牌） */
+  wildCount: number
+  /** 公开已打出牌按物理点数计数（下标=rank，3..17） */
+  seenRanks: number[]
 }
 
 export interface BotBrain {
@@ -35,6 +43,9 @@ export function buildBrainContext(state: GameState, seat: number): BotContext {
     log: state.trick.log,
     multiplier: state.multiplier,
     handCounts: state.hands.map((h) => h.length),
+    seat,
+    wildCount: state.config.wildCount,
+    seenRanks: state.seenRanks,
   }
 }
 
@@ -50,3 +61,5 @@ export function getBrain(id: string): BotBrain {
 }
 
 registerBrain(basicBrain)
+registerBrain(smartBrain)
+registerBrain(expertBrain)

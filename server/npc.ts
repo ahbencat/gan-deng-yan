@@ -1,6 +1,7 @@
 // 7 个固定 NPC 花名册：电脑玩家只从这里出人（旧 bot_N 账号留在库里但不再入选）
-// 每个 NPC 绑定一个大脑 brainId（src/game/brain.ts 注册表；扩展方式见 README）
+// 难度绑定座位（addBot 时房主选定，内存态）；花名册 brainId 仅作缺省回退
 import { getBrain, type BotBrain } from '../src/game/brain.js'
+import type { BotLevel } from '../src/types.js'
 import { findUserByUsername, getUserById, insertBotUser } from './users.js'
 
 export interface NpcDef {
@@ -8,8 +9,15 @@ export interface NpcDef {
   username: string
   /** 展示昵称「xx xx的 xx」 */
   nickname: string
-  /** 大脑 id（注册表未知 id 回退 basic） */
+  /** 大脑 id（注册表未知 id 回退 basic）；缺省难度 = 1 级 */
   brainId: string
+}
+
+/** 难度 → 大脑 id（src/game/brain.ts 注册表） */
+export const BRAIN_ID_BY_LEVEL: Record<BotLevel, string> = {
+  1: 'basic',
+  2: 'smart',
+  3: 'expert',
 }
 
 export const NPC_ROSTER: readonly NpcDef[] = [
@@ -33,10 +41,15 @@ export function ensureNpcUsers(): void {
 const brainIdByUserId = new Map<number, string>()
 
 /**
- * 解析座位用户的大脑：NPC 按花名册；真人托管 / 旧 bot_N / 未知 → basic。
- * 结果缓存，后续自动步零 DB 查询。
+ * 解析出牌座位的大脑（自动步唯一入口）：座位难度优先（addBot 时选定，内存态）；
+ * 无难度（真人托管 / 重启后 / 旧 bot_N / 未知）→ 花名册缺省（恒 basic）。
+ * 花名册路径结果缓存，后续自动步零 DB 查询。
  */
-export function brainForUser(userId: number): BotBrain {
+export function brainForSeat(
+  player: { userId: number; botLevel?: BotLevel } | undefined,
+): BotBrain {
+  if (player?.botLevel != null) return getBrain(BRAIN_ID_BY_LEVEL[player.botLevel])
+  const userId = player?.userId ?? -1
   let brainId = brainIdByUserId.get(userId)
   if (brainId === undefined) {
     const row = getUserById(userId)

@@ -14,19 +14,6 @@ const props = defineProps<{
 
 const cards = computed(() => Array.from({ length: props.player.handCount }, (_, i) => i))
 
-/** 本场累计分（+绿 / −红 / 0 灰） */
-const scoreText = computed(() => {
-  const d = props.player.sessionDelta
-  return `${d > 0 ? '+' : ''}${d}`
-})
-const scoreClass = computed(() =>
-  props.player.sessionDelta > 0
-    ? 'plus'
-    : props.player.sessionDelta < 0
-      ? 'minus'
-      : 'zero',
-)
-
 /** 头像图加载失败 → 隐藏 img，露出下方首字兜底 */
 function hideBrokenImg(e: Event) {
   ;(e.target as HTMLImageElement).style.display = 'none'
@@ -65,9 +52,6 @@ function hideBrokenImg(e: Event) {
       <div class="backs">
         <span v-for="i in cards.slice(0, 8)" :key="i" class="back-mini"></span>
         <span class="count">{{ player.handCount }}张</span>
-        <span class="score" :class="scoreClass" title="本场累计（已结束对局）"
-          ><span class="score-label">本场 </span>{{ scoreText }}</span
-        >
       </div>
     </div>
     <!-- 固定槽位：倒计时出现/消失不改变座位宽度；尺寸随断点在 CSS 里定 -->
@@ -227,23 +211,6 @@ function hideBrokenImg(e: Event) {
   flex-shrink: 0;
   white-space: nowrap;
 }
-/* 本场累计分：显示在固定行内（overflow:hidden），不改变座位尺寸 */
-.score {
-  font-size: 11px;
-  margin-left: 6px;
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.score.plus {
-  color: #a5d6a7;
-}
-.score.minus {
-  color: #ef9a9a;
-}
-.score.zero {
-  color: #bbb;
-}
 .cd {
   width: 46px;
   height: 46px;
@@ -311,13 +278,6 @@ function hideBrokenImg(e: Event) {
   font-size: 10px;
   margin-left: 0;
 }
-.seat.ring .score {
-  font-size: 10px;
-  margin-left: 4px;
-}
-.seat.ring .score-label {
-  display: none;
-}
 .seat.ring .bot-tag,
 .seat.ring .delegated-tag,
 .seat.ring .gd,
@@ -374,13 +334,6 @@ function hideBrokenImg(e: Event) {
     font-size: 11px;
     margin-left: 0;
   }
-  .seat:not(.compact) .score {
-    font-size: 10px;
-    margin-left: 4px;
-  }
-  .seat:not(.compact) .score-label {
-    display: none;
-  }
   .seat:not(.compact) .cd {
     width: 30px;
     height: 30px;
@@ -416,13 +369,6 @@ function hideBrokenImg(e: Event) {
   .seat:not(.compact) .count {
     font-size: 10px;
     margin-left: 0;
-  }
-  .seat:not(.compact) .score {
-    font-size: 9px;
-    margin-left: 4px;
-  }
-  .seat:not(.compact) .score-label {
-    display: none;
   }
   .seat:not(.compact) .cd {
     width: 28px;

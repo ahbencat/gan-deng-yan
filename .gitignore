@@ -14,8 +14,8 @@ temp
 .secret
 .env
 
-# 图片素材生成参考（占位副本 + 规格，素材定稿走 public/）
-_resource
+# 图片素材本地参考副本（正式素材定稿走 public/；规格文档在 docs/ASSETS.md，入库）
+_resource*
 
 # Editor directories and files
 .vscode/*

@@ -1,5 +1,21 @@
 import { RANK_2, RANK_A, RANK_MIN, isWild, type Card, type Decl } from '../types.js'
 
+/** 自然牌按点分组（保留牌对象）+ 百搭列表 */
+export function groupByRank(hand: Card[]): { byRank: Map<number, Card[]>; wilds: Card[] } {
+  const byRank = new Map<number, Card[]>()
+  const wilds: Card[] = []
+  for (const c of hand) {
+    if (isWild(c.rank)) {
+      wilds.push(c)
+    } else {
+      const arr = byRank.get(c.rank)
+      if (arr) arr.push(c)
+      else byRank.set(c.rank, [c])
+    }
+  }
+  return { byRank, wilds }
+}
+
 /** 自然牌按点计数 + 百搭张数 */
 export function analyze(cards: Card[]): { counts: Map<number, number>; wilds: number } {
   const counts = new Map<number, number>()

@@ -1,5 +1,5 @@
-import { RANK_2, RANK_MIN, isWild, type Card, type Decl, type Play } from '../types.js'
-import { canForm } from './combo.js'
+import { RANK_2, RANK_A, RANK_MIN, isWild, type Card, type Decl, type Play } from '../types.js'
+import { canForm, groupByRank } from './combo.js'
 
 /**
  * 跟牌合法性：next 能否压 prev。
@@ -65,31 +65,31 @@ export function pickAutoPlay(hand: Card[]): { cards: Card[]; decl: Decl } {
   return { cards: [wilds[0], wilds[1]], decl: { type: 'pair', rank: RANK_MIN } }
 }
 
-/**
- * 跟牌态的最省压牌（基础 bot / 托管共用）：
- * - 同型压优先（single/pair：目标点数升序，rank+1 优先、2 特权兜底），其次炸弹
- *   （按 张数升 → 点数升 → 用百搭升）；压不过返回 null（调用方过牌）
- * - 顺子/连对不尝试（直接 null）；单2/对2 的 prev 只有炸弹能压
- * - 返回前经 canForm + canBeat 守卫校验
- */
-export function pickBeatingPlay(
-  hand: Card[],
-  prev: Play,
-): { cards: Card[]; decl: Decl } | null {
-  const a = prev.decl
-  if (a.type === 'straight' || a.type === 'pairChain') return null
+// ---- 合法压牌枚举（大脑候选与基础 bot 共用的唯一枚举源） ----
 
-  const byRank = new Map<number, Card[]>()
-  const wildCards: Card[] = []
-  for (const c of hand) {
-    if (isWild(c.rank)) {
-      wildCards.push(c)
-    } else {
-      const arr = byRank.get(c.rank)
-      if (arr) arr.push(c)
-      else byRank.set(c.rank, [c])
-    }
-  }
+export interface BeatCandidate {
+  cards: Card[]
+  decl: Decl
+  usesWild: boolean
+  breaksSet: boolean
+  isBomb: boolean
+  usesTwo: boolean
+  /** 排序成本：普通牌 = 点数；炸弹 = 100 + 张数 */
+  cost: number
+}
+
+export function beatCost(decl: Decl): number {
+  return decl.type === 'bomb' ? 100 + decl.length : decl.rank
+}
+
+/**
+ * 枚举 hand 压 prev 的全部合法打法（含百搭补对 / 纯王炸弹），逐个经 canForm + canBeat 校验。
+ * 排序：非炸弹按 cost 升序（同 cost 稳定保留生成序），炸弹按 张数→点数→用百搭升。
+ */
+export function enumerateBeats(hand: Card[], prev: Play): BeatCandidate[] {
+  const { byRank, wilds } = groupByRank(hand)
+  const out: BeatCandidate[] = []
+  const a = prev.decl
 
   const ok = (cards: Card[], decl: Decl): boolean =>
     canForm(cards, decl) && canBeat(prev, { decl })
@@ -97,12 +97,25 @@ export function pickBeatingPlay(
   /** 组 n 张点数 r：自然优先，不足补百搭；不够返回 null */
   const take = (r: number, n: number): Card[] | null => {
     const nat = byRank.get(r) ?? []
-    if (nat.length + wildCards.length < n) return null
+    if (nat.length + wilds.length < n) return null
     const useWild = Math.max(0, n - nat.length)
-    return [...nat.slice(0, n), ...wildCards.slice(0, useWild)]
+    return [...nat.slice(0, n), ...wilds.slice(0, useWild)]
   }
 
-  // 同型压（仅 single/pair）
+  const push = (cards: Card[], decl: Decl, usesWild: boolean, breaksSet: boolean): void => {
+    if (!ok(cards, decl)) return
+    out.push({
+      cards,
+      decl,
+      usesWild,
+      breaksSet,
+      isBomb: decl.type === 'bomb',
+      usesTwo: decl.rank === RANK_2,
+      cost: beatCost(decl),
+    })
+  }
+
+  // 同型压：单张/对子（rank+1 优先，其次 2 通管）
   if (a.type === 'single' || a.type === 'pair') {
     const targets: number[] = []
     if (a.rank + 1 <= RANK_2) targets.push(a.rank + 1)
@@ -111,59 +124,114 @@ export function pickBeatingPlay(
       if (a.type === 'single') {
         const nat = byRank.get(t)
         if (nat && nat.length > 0) {
-          const cards = [nat[0]]
-          const decl: Decl = { type: 'single', rank: t }
-          if (ok(cards, decl)) return { cards, decl }
+          // 单张恒天然（百搭不能单出）；拆组 = 该点有剩余
+          push([nat[0]], { type: 'single', rank: t }, false, nat.length > 1)
         }
       } else {
         const cards = take(t, 2)
         if (cards) {
-          const decl: Decl = { type: 'pair', rank: t }
-          if (ok(cards, decl)) return { cards, decl }
+          const natN = (byRank.get(t) ?? []).length
+          const usesWild = cards.some((c) => isWild(c.rank))
+          // 对子：该点自然牌 >2 且只取 2 张 → 拆组
+          push(cards, { type: 'pair', rank: t }, usesWild, natN > 2)
         }
       }
     }
   }
 
-  // 炸弹候选（单张/对子同型压不到、或 prev 本身是炸弹时的唯一手段）
-  interface Cand {
-    cards: Card[]
-    decl: Decl
-    len: number
-    rank: number
-    wilds: number
+  // 顺子/连对 counter：同型同长、起点 +1（只取天然牌）
+  if (a.type === 'straight' || a.type === 'pairChain') {
+    const start = a.rank + 1
+    const len = a.length
+    if (start + len - 1 <= RANK_A) {
+      const perRank = a.type === 'straight' ? 1 : 2
+      const cards: Card[] = []
+      let okWin = true
+      let breaksSet = false
+      for (let r = start; r < start + len; r++) {
+        const nat = byRank.get(r) ?? []
+        if (nat.length < perRank) {
+          okWin = false
+          break
+        }
+        if (nat.length > perRank) breaksSet = true
+        cards.push(...nat.slice(0, perRank))
+      }
+      if (okWin) {
+        const decl: Decl =
+          a.type === 'straight'
+            ? { type: 'straight', rank: start, length: len }
+            : { type: 'pairChain', rank: start, length: len }
+        push(cards, decl, false, breaksSet)
+      }
+    }
   }
-  const bombs: Cand[] = []
+
+  // 炸弹候选（任意 prev 都可；单2/对2/炸弹的 prev 只有炸弹能压）
+  // wilds 值仅作炸弹间排序的末位键（张数→点数→用百搭升）
+  const bombs: { cand: BeatCandidate; wilds: number }[] = []
+  const pushBomb = (
+    cards: Card[],
+    decl: Decl,
+    breaksSet: boolean,
+    wildCount: number,
+  ): void => {
+    if (!ok(cards, decl)) return
+    bombs.push({
+      cand: {
+        cards,
+        decl,
+        usesWild: wildCount > 0,
+        breaksSet,
+        isBomb: true,
+        usesTwo: decl.rank === RANK_2,
+        cost: beatCost(decl),
+      },
+      wilds: wildCount,
+    })
+  }
   for (const [r, nat] of byRank) {
-    const total = nat.length + wildCards.length
+    const total = nat.length + wilds.length
     for (let len = 3; len <= total; len++) {
       const cards = take(r, len)
       if (!cards) continue
-      bombs.push({
-        cards,
-        decl: { type: 'bomb', rank: r, length: len },
-        len,
-        rank: r,
-        wilds: Math.max(0, len - nat.length),
-      })
+      pushBomb(cards, { type: 'bomb', rank: r, length: len }, nat.length > len, Math.max(0, len - nat.length))
     }
   }
-  if (wildCards.length >= 3) {
+  if (wilds.length >= 3) {
     // 全百搭炸弹自由选点：非炸弹 prev 用最小点；同长压炸弹需声明 prev.rank+1
-    for (let len = 3; len <= wildCards.length; len++) {
-      const cards = wildCards.slice(0, len)
+    for (let len = 3; len <= wilds.length; len++) {
+      const cards = wilds.slice(0, len)
       const ranks =
         a.type === 'bomb' && a.length === len && a.rank < RANK_2
           ? [RANK_MIN, a.rank + 1]
           : [RANK_MIN]
       for (const rank of ranks) {
-        bombs.push({ cards, decl: { type: 'bomb', rank, length: len }, len, rank, wilds: len })
+        pushBomb(cards, { type: 'bomb', rank, length: len }, false, len)
       }
     }
   }
-  bombs.sort((x, y) => x.len - y.len || x.rank - y.rank || x.wilds - y.wilds)
-  for (const c of bombs) {
-    if (ok(c.cards, c.decl)) return { cards: c.cards, decl: c.decl }
-  }
-  return null
+  bombs.sort(
+    (x, y) =>
+      (x.cand.decl.type === 'bomb' ? x.cand.decl.length : 0) -
+        (y.cand.decl.type === 'bomb' ? y.cand.decl.length : 0) ||
+      x.cand.decl.rank - y.cand.decl.rank ||
+      x.wilds - y.wilds,
+  )
+  // 非炸弹按 cost 升序（同 cost 稳定保留生成序）
+  out.sort((x, y) => x.cost - y.cost)
+  return [...out, ...bombs.map((b) => b.cand)]
+}
+
+/**
+ * 跟牌态的最省压牌（基础 bot / 托管共用）：enumerateBeats 的首项即最省合法压法。
+ * - 顺子/连对不尝试（直接 null）；压不过返回 null（调用方过牌）
+ */
+export function pickBeatingPlay(
+  hand: Card[],
+  prev: Play,
+): { cards: Card[]; decl: Decl } | null {
+  if (prev.decl.type === 'straight' || prev.decl.type === 'pairChain') return null
+  const best = enumerateBeats(hand, prev)[0]
+  return best ? { cards: best.cards, decl: best.decl } : null
 }

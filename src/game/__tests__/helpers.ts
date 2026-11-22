@@ -1,5 +1,6 @@
-import type { Card, GameState, SeatMeta } from '../../types.js'
-import { STATE_VERSION } from '../../types.js'
+import type { Card, GameState, Play, SeatMeta } from '../../types.js'
+import { STATE_VERSION, emptyRankTally } from '../../types.js'
+import type { BotContext } from '../brain.js'
 
 let counter = 1
 
@@ -40,10 +41,39 @@ export function baseState(
     bombHistory: [],
     multiplier: 1,
     everPlayed: seats.map(() => false),
+    seenRanks: emptyRankTally(),
     startedAt: now,
     endsAt: now + 600_000,
     result: null,
     actionSeq: 0,
     ...overrides,
   }
+}
+
+/** 大脑测试共用：构造 BotContext（默认 0 号位单挑、百搭 2 张） */
+export function ctxOf(
+  hand: Card[],
+  opts: {
+    prev?: Play | null
+    handCounts?: number[]
+    seat?: number
+    seenRanks?: number[]
+    wildCount?: number
+  } = {},
+): BotContext {
+  return {
+    hand,
+    prev: opts.prev ?? null,
+    log: [],
+    multiplier: 1,
+    handCounts: opts.handCounts ?? [hand.length, 5],
+    seat: opts.seat ?? 0,
+    wildCount: opts.wildCount ?? 2,
+    seenRanks: opts.seenRanks ?? emptyRankTally(),
+  }
+}
+
+/** 大脑测试共用：他家打出的单张 */
+export function single(rank: number, seat = 1): Play {
+  return { seat, cards: mk(rank), decl: { type: 'single', rank } }
 }

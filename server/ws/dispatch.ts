@@ -1,6 +1,6 @@
 // WS 消息分发：信封解析 + 输入消毒 + 路由（服务端是信任边界，一切客户端输入在此消毒）
 import type { WebSocket } from 'ws'
-import { WS_ENVELOPE_VERSION, type Decl, type Envelope } from '../../src/types.js'
+import { WS_ENVELOPE_VERSION, type BotLevel, type Decl, type Envelope } from '../../src/types.js'
 import { extendSession, startGame } from '../gameSession.js'
 import { pushLobby, pushRoomState } from '../notify.js'
 import { rooms, sanitizeConfig } from '../roomManager.js'
@@ -207,7 +207,12 @@ function route(ws: WebSocket, userId: number, type: string, payload: Payload, se
         sendError(ws, 'NOT_HOST', '只有房主可以添加电脑', seq)
         return
       }
-      const r = rooms.addBot(room.id)
+      const level = sanitizeBotLevel(payload.level)
+      if (level === null) {
+        sendError(ws, 'BAD_BOT_LEVEL', '难度参数非法', seq)
+        return
+      }
+      const r = rooms.addBot(room.id, level)
       if (!r.ok) {
         sendError(ws, 'ADD_BOT_FAILED', r.error, seq)
         return
@@ -339,6 +344,13 @@ function sanitizeCardIds(raw: unknown): number[] | null {
     ids.push(id)
   }
   return ids
+}
+
+/** 电脑难度：缺省 1；仅接受整数 1|2|3；其余返回 null（调用方报 BAD_BOT_LEVEL） */
+function sanitizeBotLevel(raw: unknown): BotLevel | null {
+  if (raw === undefined) return 1
+  if (raw === 1 || raw === 2 || raw === 3) return raw
+  return null
 }
 
 function sanitizeDecl(raw: unknown): Decl | null {

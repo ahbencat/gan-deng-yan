@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { configSummary } from '../label.js'
+import { botLevelLabel, configSummary } from '../label.js'
 import { openFinalSummary, send, serverNow, store } from '../store.js'
 import ConfigForm from '../components/ConfigForm.vue'
 import ExtendDialog from '../components/ExtendDialog.vue'
 import ResultDialog from '../components/ResultDialog.vue'
-import { DEFAULT_ROOM_CONFIG, type RoomConfig } from '../types.js'
+import { DEFAULT_ROOM_CONFIG, type BotLevel, type RoomConfig } from '../types.js'
 
 const editing = ref(false)
 const editConfig = ref<RoomConfig>({ ...DEFAULT_ROOM_CONFIG })
@@ -53,8 +53,11 @@ function leave(): void {
   send('room.leave', {})
 }
 
+/** 添加电脑的难度选择（1新手/2普通/3高手；缺省 1 = 行为保持） */
+const botLevel = ref<BotLevel>(1)
+
 function addBot(): void {
-  send('room.addBot', {})
+  send('room.addBot', { level: botLevel.value })
 }
 
 function removeBot(userId: number): void {
@@ -119,34 +122,45 @@ function fmtMs(ms: number): string {
           {{ nextGameSecs }} 秒后自动开局
         </p>
       </div>
-      <div class="actions">
-        <button v-if="isHost && !editing" class="ghost" @click="startEdit()">修改配置</button>
-        <button
-          v-if="isHost && !editing && room.players.length < room.config.maxPlayers"
-          class="ghost"
-          @click="addBot()"
-        >
-          添加电脑
-        </button>
-        <button
-          v-if="room.sessionSummary"
-          class="ghost"
-          @click="openFinalSummary(room.sessionSummary)"
-        >
-          查看本场结算
-        </button>
-        <button v-if="iAmDelegated" class="ghost" @click="cancelDelegate()">取消托管</button>
-        <button
-          v-if="isHost && room.sessionEndsAt != null"
-          class="ghost"
-          @click="showExtendDialog = true"
-        >
-          加时
-        </button>
-        <button class="ghost" @click="leave()">离开房间</button>
-        <button v-if="isHost && canStart && !editing" @click="startGame()">开始游戏</button>
-      </div>
     </header>
+    <!-- 按钮行固定在标题下方：增减按钮不再挤动标题区 -->
+    <div class="actions">
+      <button v-if="isHost && !editing" class="ghost" @click="startEdit()">修改配置</button>
+      <select
+        v-if="isHost && !editing && room.players.length < room.config.maxPlayers"
+        v-model="botLevel"
+        class="level-select"
+        aria-label="电脑难度"
+      >
+        <option :value="1">{{ botLevelLabel(1) }}</option>
+        <option :value="2">{{ botLevelLabel(2) }}</option>
+        <option :value="3">{{ botLevelLabel(3) }}</option>
+      </select>
+      <button
+        v-if="isHost && !editing && room.players.length < room.config.maxPlayers"
+        class="ghost"
+        @click="addBot()"
+      >
+        添加电脑
+      </button>
+      <button
+        v-if="room.sessionSummary"
+        class="ghost"
+        @click="openFinalSummary(room.sessionSummary)"
+      >
+        查看本场结算
+      </button>
+      <button v-if="iAmDelegated" class="ghost" @click="cancelDelegate()">取消托管</button>
+      <button
+        v-if="isHost && room.sessionEndsAt != null"
+        class="ghost"
+        @click="showExtendDialog = true"
+      >
+        加时
+      </button>
+      <button class="ghost" @click="leave()">离开房间</button>
+      <button v-if="isHost && canStart && !editing" @click="startGame()">开始游戏</button>
+    </div>
 
     <div v-if="editing" class="edit-box">
       <h3>房间配置</h3>
@@ -172,7 +186,8 @@ function fmtMs(ms: number): string {
             ><span class="icon" style="--i: url('/images/icons/host.svg')"></span>房主</em
           >
           <em v-if="p.isBot" class="bot-tag"
-            ><span class="icon" style="--i: url('/images/icons/bot.svg')"></span>电脑</em
+            ><span class="icon" style="--i: url('/images/icons/bot.svg')"></span
+            >电脑·{{ botLevelLabel(p.botLevel) }}</em
           >
           <em v-if="p.delegated && !p.isBot" class="delegated-tag"
             ><span class="icon" style="--i: url('/images/icons/delegate.svg')"></span>托管</em
@@ -258,6 +273,7 @@ h2 {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin-top: 14px;
 }
 .edit-box {
   background: var(--panel, #fff);
@@ -413,6 +429,19 @@ button.ghost {
   color: #555;
 }
 button.ghost:hover {
+  background: #e4e4e4;
+}
+/* 电脑难度下拉：与 ghost 按钮同高同底，行内不撑动布局 */
+.level-select {
+  padding: 9px 8px;
+  border: none;
+  border-radius: 8px;
+  background: #f0f0f0;
+  color: #555;
+  font-size: 14px;
+  cursor: pointer;
+}
+.level-select:hover {
   background: #e4e4e4;
 }
 

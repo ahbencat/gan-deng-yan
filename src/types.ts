@@ -25,6 +25,14 @@ export const RANK_BIG_JOKER = 17
 /** rank >= 16 即百搭（大小王）；花色不参与规则 */
 export const isWild = (rank: number): boolean => rank >= RANK_SMALL_JOKER
 
+/** 按物理点数计数的数组长度（下标=rank 0..17，有效 3..17）——seenRanks / 记牌推算共用 */
+export const RANK_SLOT_COUNT = 18
+
+/** 全 0 的 rank 计数数组（seenRanks 及 unseenByRank 同形） */
+export function emptyRankTally(): number[] {
+  return new Array(RANK_SLOT_COUNT).fill(0)
+}
+
 export interface Card {
   id: number
   rank: number
@@ -140,6 +148,9 @@ export interface SeatMeta {
   nickname: string
 }
 
+/** 电脑玩家难度：1=基础（basic）2=策略（smart）3=记牌（expert） */
+export type BotLevel = 1 | 2 | 3
+
 export interface GameState {
   v: number
   gameId: number
@@ -158,6 +169,8 @@ export interface GameState {
   multiplier: number
   /** 关瞪瞪判定：是否成功出过牌 */
   everPlayed: boolean[]
+  /** 公开打出的牌按物理点数计数（下标=rank，3..17）；旧 state_json 缺省由 normalizeSeenRanks 补齐 */
+  seenRanks: number[]
   startedAt: number
   /** 本场截止时刻（调度/展示用）；到期不强制终局，等当前局自然结束后结算本场 */
   endsAt: number
@@ -231,6 +244,8 @@ export interface RoomPlayerState {
   isBot: boolean
   /** 托管中（本人把回合交给服务器自动打） */
   delegated: boolean
+  /** 电脑难度（内存态，重启回 1；真人无此字段） */
+  botLevel?: BotLevel
 }
 
 export interface RoomState {
@@ -275,7 +290,7 @@ export interface ClientMessages {
   'room.leave': Record<string, never>
   'room.config': { config: RoomConfig }
   'room.start': Record<string, never>
-  'room.addBot': Record<string, never>
+  'room.addBot': { level?: BotLevel }
   'room.removeBot': { userId: number }
   /** 解散房间（仅房主 + 等待态：全员回大厅、电脑回空闲池、房间即刻关闭） */
   'room.dissolve': Record<string, never>

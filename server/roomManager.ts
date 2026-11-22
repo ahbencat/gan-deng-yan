@@ -1,6 +1,7 @@
 // 房间管理：内存房间表 + DB 同步（创建/加入/离开/配置/开局/关房）
 // 对局运行时（GameSession）挂在 Room.session 上，由 gameSession.ts 管理。
 import type {
+  BotLevel,
   GameResult,
   RoomConfig,
   RoomListEntry,
@@ -25,6 +26,8 @@ export interface RoomPlayer {
   score: number
   /** 电脑玩家（服务器驱动出牌） */
   isBot: boolean
+  /** 电脑难度（内存态，addBot 时选定；重启回缺省 1 级；真人无此字段） */
+  botLevel?: BotLevel
 }
 
 export interface Room {
@@ -120,6 +123,7 @@ class RoomManager {
         score: p.score,
         isBot: p.isBot,
         delegated: room.delegated.has(p.userId),
+        botLevel: p.botLevel,
       }))
     return {
       id: room.id,
@@ -223,9 +227,12 @@ class RoomManager {
   /**
    * 添加电脑（仅等待态 + 未满；host 校验在 dispatch）。
    * 只从 7 个固定 NPC 花名册按序取第一个空闲者（锚点空 + 交叉 getByUser 防崩溃间隙）；
-   * 全部在场则报错，不再新建 bot_N。
+   * 全部在场则报错，不再新建 bot_N。难度绑定座位（内存态，重启回 1 级）。
    */
-  addBot(roomId: number): { ok: true; room: Room } | { ok: false; error: string } {
+  addBot(
+    roomId: number,
+    level: BotLevel,
+  ): { ok: true; room: Room } | { ok: false; error: string } {
     const room = this.get(roomId)
     if (!room) return { ok: false, error: '房间不存在或已关闭' }
     if (room.status !== 'waiting') return { ok: false, error: '对局进行中，不能添加电脑' }
@@ -234,7 +241,12 @@ class RoomManager {
     for (const def of NPC_ROSTER) {
       const row = findUserByUsername(def.username)
       if (row && row.current_room_id == null && !this.getByUser(row.id)) {
-        return this.join(roomId, toPublic(row))
+        const r = this.join(roomId, toPublic(row))
+        if (r.ok) {
+          const p = r.room.players.get(row.id)
+          if (p) p.botLevel = level
+        }
+        return r
       }
     }
     return { ok: false, error: '没有空闲电脑（7 台电脑均在其他房间）' }

@@ -39,28 +39,26 @@ function clamp(): void {
       </select>
     </label>
 
-    <div class="row">
-      <label>
-        回合思考时间（秒）
-        <input
-          v-model.number="config.turnSeconds"
-          type="number"
-          min="5"
-          max="120"
-          @blur="clamp()"
-        />
-      </label>
-      <label>
-        本场时长（分钟，局间自动连开）
-        <input
-          v-model.number="config.gameMinutes"
-          type="number"
-          min="1"
-          max="60"
-          @blur="clamp()"
-        />
-      </label>
-    </div>
+    <label>
+      回合思考时间（秒）
+      <input
+        v-model.number="config.turnSeconds"
+        type="number"
+        min="5"
+        max="120"
+        @blur="clamp()"
+      />
+    </label>
+    <label>
+      本场时长（分钟，局间自动连开）
+      <input
+        v-model.number="config.gameMinutes"
+        type="number"
+        min="1"
+        max="60"
+        @blur="clamp()"
+      />
+    </label>
   </div>
 </template>
 
@@ -70,8 +68,7 @@ function clamp(): void {
   flex-direction: column;
   gap: 14px;
 }
-.form > label,
-.row label {
+.form > label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -98,17 +95,5 @@ input[type='number'] {
   border: 1px solid #ccc;
   border-radius: 8px;
   font-size: 14px;
-}
-.row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-@media (max-width: 640px) {
-  /* 窄屏两列数字输入换行单列，避免溢出 */
-  .row {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

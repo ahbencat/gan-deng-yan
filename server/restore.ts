@@ -1,7 +1,7 @@
 // 启动恢复：重建等待/进行中房间；进行中对局按绝对时间戳裁决过期回合 deadline；
 // 本场到点不强制结算进行中的对局（等自然结束）；版本门禁失败的对局作废不计分。
 // 玩家 WS 连上即由 dispatch 的 session 恢复。
-import { applyAutoMove, applyTimeout } from '../src/game/engine.js'
+import { applyAutoMove, applyTimeout, normalizeSeenRanks } from '../src/game/engine.js'
 import { STATE_VERSION, type GameState } from '../src/types.js'
 import { db } from './db.js'
 import {
@@ -14,7 +14,7 @@ import {
   startGame,
 } from './gameSession.js'
 import { pushLobby, pushRoomState } from './notify.js'
-import { brainForUser } from './npc.js'
+import { brainForSeat } from './npc.js'
 import { rooms, type RoomPlayer } from './roomManager.js'
 import { abandonGame, recordGameResult } from './users.js'
 
@@ -117,6 +117,8 @@ export function restoreAll(): void {
       room.status = 'waiting'
       continue
     }
+    // 旧 state_json（v=1 无 seenRanks 字段）补齐记牌计数
+    normalizeSeenRanks(state)
 
     // 已终局但结算没落库（崩溃间隙）→ 补结算
     if (state.phase === 'finished') {
@@ -141,7 +143,7 @@ export function restoreAll(): void {
       const isBotTurn =
         turnUserId != null && room.players.get(turnUserId)?.isBot === true
       const r = isBotTurn
-        ? applyAutoMove(state, now, brainForUser(turnUserId!))
+        ? applyAutoMove(state, now, brainForSeat(room.players.get(turnUserId!)))
         : applyTimeout(state, now)
       if (r.ok) {
         state = r.state

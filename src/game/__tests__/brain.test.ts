@@ -4,6 +4,7 @@ import { applyAutoMove } from '../engine.js'
 import { pickAutoPlay, pickBeatingPlay } from '../rules.js'
 import { basicBrain } from '../brains/basic.js'
 import { baseState, mk } from './helpers.js'
+import { emptyRankTally } from '../../types.js'
 
 describe('BotBrain 抽象', () => {
   it('basicBrain 领出 = pickAutoPlay，跟牌 = pickBeatingPlay（薄委托一致）', () => {
@@ -15,6 +16,9 @@ describe('BotBrain 抽象', () => {
         log: [],
         multiplier: 1,
         handCounts: [3, 2],
+        seat: 0,
+        wildCount: 2,
+        seenRanks: emptyRankTally(),
       }),
     ).toEqual(pickAutoPlay(leadHand))
 
@@ -27,6 +31,9 @@ describe('BotBrain 抽象', () => {
         log: [],
         multiplier: 1,
         handCounts: [2, 1],
+        seat: 0,
+        wildCount: 2,
+        seenRanks: emptyRankTally(),
       }),
     ).toEqual(pickBeatingPlay(followHand, prev))
   })

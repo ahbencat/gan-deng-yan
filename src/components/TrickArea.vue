@@ -7,7 +7,8 @@ import CardView from './Card.vue'
 
 const props = defineProps<{
   trick: PublicTrickState
-  players: { seat: number; nickname: string }[]
+  /** 座位公开信息（含本场累计分，集中条由此派生，不再单独传） */
+  players: { seat: number; nickname: string; sessionDelta: number }[]
   pileCount: number
   multiplier: number
   endsAt: number
@@ -32,6 +33,11 @@ const playSig = computed(() => {
 function playerName(seat: number): string {
   return props.players.find((p) => p.seat === seat)?.nickname ?? `P${seat + 1}`
 }
+
+/** 本场积分集中条（players 已按座位序下发） */
+const scores = computed(() =>
+  props.players.map((p) => ({ seat: p.seat, nickname: p.nickname, delta: p.sessionDelta })),
+)
 
 function logText(e: TrickLogEntry): string {
   const name = playerName(e.seat)
@@ -89,11 +95,23 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
       </span>
     </div>
 
+    <!-- 本场积分集中显示（固定高度：分数位数变化不撑动桌面） -->
+    <div class="scores">
+      <span
+        v-for="p in scores"
+        :key="p.seat"
+        class="score-item"
+        :class="p.delta > 0 ? 'up' : p.delta < 0 ? 'down' : 'flat'"
+      >
+        {{ p.nickname }} <b>{{ p.delta > 0 ? '+' : '' }}{{ p.delta }}</b>
+      </span>
+    </div>
+
     <div class="stage">
       <div v-if="lastPlay" :key="playSig" class="play">
         <span class="who">{{ lastPlayerName }}</span>
         <div class="cards">
-          <CardView v-for="c in lastPlay.cards" :key="c.id" :card="c" small />
+          <CardView v-for="c in lastPlay.cards" :key="c.id" :card="c" />
         </div>
         <span class="decl">{{ declLabel(lastPlay.decl) }}</span>
       </div>
@@ -163,12 +181,15 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
   background: rgb(0 0 0 / 25%);
   border-radius: 14px;
   /* 固定高度：出牌区（出牌/声明/领出提示）与领出提示等高，不随桌面内容跳变 */
-  height: 156px;
+  height: 190px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 14px;
+  /* 河牌基线 = small 尺寸 44×64；宽高都充裕的窗口升大一号（见文末媒体查询） */
+  --card-w: 44px;
+  --card-h: 64px;
 }
 .play {
   display: flex;
@@ -234,6 +255,39 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
   margin: 0;
   font-size: 14px;
 }
+/* 本场积分集中条：固定高度（分数/昵称变化不撑动桌面）。
+   统一单行横滚（safe center：适配时居中，超宽退到起点可滚动，绝不裁内容） */
+.scores {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  justify-content: safe center;
+  align-items: center;
+  gap: 2px 14px;
+  height: 36px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  color: #c8e6c9;
+  font-size: 12px;
+  line-height: 16px;
+  scrollbar-width: none;
+}
+.scores .score-item {
+  white-space: nowrap;
+}
+.scores .up {
+  color: #a5d6a7;
+}
+.scores .down {
+  color: #ef9a9a;
+}
+.scores .flat {
+  color: #bbb;
+}
+.scores b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .log {
   color: #cfd8dc;
   font-size: 12px;
@@ -242,8 +296,8 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
   display: flex;
   flex-direction: column;
   gap: 3px;
-  /* 固定 7 行（7×16 + 6×3 = 130）：日志累积/换轮不再撑高桌面 */
-  height: 130px;
+  /* 固定 5 行（5×16 + 4×3 = 92）：日志累积/换轮不再撑高桌面；高度让位给积分条 */
+  height: 94px;
   justify-content: flex-end;
   overflow: hidden;
 }
@@ -288,10 +342,20 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
   .stage {
     height: 130px;
     padding: 10px;
+    /* 手机河牌维持原 small 尺寸（40×58） */
+    --card-w: 40px;
+    --card-h: 58px;
+  }
+  .scores {
+    /* 高度让位给积分条；机制同基线（单行横滚） */
+    height: 26px;
+    font-size: 11px;
+    line-height: 26px;
+    gap: 12px;
   }
   .log {
-    /* 4 行：4×14 + 3×2 = 62；顶对齐让溢出裁掉的是旧日志（新日志恒可见） */
-    height: 62px;
+    /* 2 行：2×14 + 2 = 30；顶对齐让溢出裁掉的是旧日志（新日志恒可见） */
+    height: 36px;
     font-size: 11px;
     line-height: 14px;
     gap: 2px;
@@ -322,6 +386,10 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
     height: 96px;
     padding: 8px;
   }
+  .scores {
+    /* 矮屏（横屏）空间极紧：隐藏积分条，其余断点不受影响 */
+    display: none;
+  }
   .log {
     height: 32px;
     font-size: 10px;
@@ -335,6 +403,14 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
   }
   .lead-hint {
     font-size: 12px;
+  }
+}
+
+@media (min-width: 641px) and (min-height: 501px) {
+  /* 宽且高：河牌升大一号 58×84（窄屏由 ≤640 收到 40×58，矮窗维持基线） */
+  .stage {
+    --card-w: 58px;
+    --card-h: 84px;
   }
 }
 </style>

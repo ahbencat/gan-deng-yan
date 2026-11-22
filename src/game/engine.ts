@@ -1,7 +1,9 @@
 import {
   RANK_2,
   RANK_MIN,
+  RANK_SLOT_COUNT,
   STATE_VERSION,
+  emptyRankTally,
   isWild,
   type Card,
   type Decl,
@@ -28,6 +30,13 @@ const fail = (error: string): ActionResult => ({ ok: false, error })
 function trimLog(state: GameState): void {
   if (state.trick.log.length > LOG_LIMIT) {
     state.trick.log.splice(0, state.trick.log.length - LOG_LIMIT)
+  }
+}
+
+/** 旧 state_json（v=1 无此字段或长度不对）补齐 seenRanks；新状态幂等（restore 用） */
+export function normalizeSeenRanks(state: GameState): void {
+  if (!Array.isArray(state.seenRanks) || state.seenRanks.length !== RANK_SLOT_COUNT) {
+    state.seenRanks = emptyRankTally()
   }
 }
 
@@ -70,6 +79,7 @@ export function createGame(params: {
     bombHistory: [],
     multiplier: 1,
     everPlayed: seats.map(() => false),
+    seenRanks: emptyRankTally(),
     startedAt: now,
     endsAt: endsAt ?? now + config.gameMinutes * 60_000,
     result: null,
@@ -117,6 +127,8 @@ export function applyPlay(
   next.trick.log.push({ seat, kind: 'play', cards: selected, decl })
   trimLog(next)
   next.everPlayed[seat] = true
+  // 记牌：公开打出的牌按物理点数累计（百搭用在对子里计 16/17，声明点数不计）
+  for (const c of selected) next.seenRanks[c.rank]++
   next.actionSeq++
 
   if (decl.type === 'bomb') {

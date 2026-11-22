@@ -1,9 +1,21 @@
 // 牌型/牌点中文标签（前端展示用）
 import { RANK_LABELS } from './game/cards.js'
-import type { Card, Decl } from './types.js'
+import type { BotLevel, Card, Decl } from './types.js'
 
 export function rankLabel(rank: number): string {
   return RANK_LABELS[rank] ?? String(rank)
+}
+
+/** 电脑难度标签（缺省 = 1 级新手） */
+export function botLevelLabel(level?: BotLevel): string {
+  switch (level) {
+    case 2:
+      return '普通'
+    case 3:
+      return '高手'
+    default:
+      return '新手'
+  }
 }
 
 export function cardText(card: Card): string {
