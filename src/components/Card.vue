@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { asset } from '../base.js'
 import { rankLabel } from '../label.js'
 import type { Card } from '../types.js'
 
@@ -19,7 +20,7 @@ const isRed = computed(() => {
 const jokerText = computed(() => (props.card && isJoker.value ? rankLabel(props.card.rank) : ''))
 // 王牌插画（rank 17=大王，16=小王）；加载失败时 onerror 隐藏 img，露出下方竖排文字兜底
 const jokerSrc = computed(() =>
-  (props.card?.rank ?? 0) >= 17 ? '/images/cards/joker-big.png' : '/images/cards/joker-small.png',
+  asset((props.card?.rank ?? 0) >= 17 ? '/images/cards/joker-big.png' : '/images/cards/joker-small.png'),
 )
 function hideBrokenImg(e: Event) {
   ;(e.target as HTMLImageElement).style.display = 'none'

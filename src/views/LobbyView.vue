@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { asset, iconStyle } from '../base.js'
 import { configSummary } from '../label.js'
 import { apiLogout } from '../net/api.js'
 import { disconnect, send, store } from '../store.js'
@@ -56,13 +57,13 @@ function hideBrokenImg(e: Event) {
       </div>
       <div class="actions">
         <button class="ghost" @click="refresh()">
-          <span class="icon" style="--i: url('/images/icons/refresh.svg')"></span>刷新
+          <span class="icon" :style="iconStyle('/images/icons/refresh.svg')"></span>刷新
         </button>
         <button class="ghost" @click="logout()">
-          <span class="icon" style="--i: url('/images/icons/logout.svg')"></span>退出登录
+          <span class="icon" :style="iconStyle('/images/icons/logout.svg')"></span>退出登录
         </button>
         <button @click="showCreate = true">
-          <span class="icon" style="--i: url('/images/icons/plus.svg')"></span>创建房间
+          <span class="icon" :style="iconStyle('/images/icons/plus.svg')"></span>创建房间
         </button>
       </div>
     </header>
@@ -70,7 +71,7 @@ function hideBrokenImg(e: Event) {
     <main>
       <h2>房间列表</h2>
       <div v-if="store.lobbyRooms.length === 0" class="empty">
-        <img class="empty-art" src="/images/art/empty.png" alt="" @error="hideBrokenImg" />
+        <img class="empty-art" :src="asset('/images/art/empty.png')" alt="" @error="hideBrokenImg" />
         <p>暂无房间，点击右上角「创建房间」开一桌</p>
       </div>
       <ul class="rooms">

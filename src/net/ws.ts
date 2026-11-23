@@ -1,5 +1,6 @@
 // WS 客户端：信封封装、seq 递增、指数退避重连（1s×1.5 封顶 10s）、
 // 4000（别处登录）/4001（未登录）特殊处理
+import { asset } from '../base.js'
 import type { Envelope } from '../types.js'
 
 const WS_ENVELOPE_VERSION = 1
@@ -26,7 +27,7 @@ export class WsClient {
   connect(): void {
     this.manuallyClosed = false
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${proto}://${location.host}/ws`
+    const url = `${proto}://${location.host}${asset('/ws')}`
     let ws: WebSocket
     try {
       ws = new WebSocket(url)

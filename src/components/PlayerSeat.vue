@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { asset, iconStyle } from '../base.js'
 import type { PublicPlayerState } from '../types.js'
 import Countdown from './Countdown.vue'
 
@@ -26,12 +27,12 @@ function hideBrokenImg(e: Event) {
       <span class="avatar-fallback">{{ player.nickname.slice(0, 1) }}</span>
       <img
         class="avatar-img"
-        :src="player.isBot ? '/images/avatars/bot.png' : '/images/avatars/default.png'"
+        :src="asset(player.isBot ? '/images/avatars/bot.png' : '/images/avatars/default.png')"
         :alt="player.nickname"
         @error="hideBrokenImg"
       />
       <span v-if="player.isDealer" class="dealer" title="庄家">
-        <span class="icon" style="--i: url('/images/icons/dealer.svg')"></span>
+        <span class="icon" :style="iconStyle('/images/icons/dealer.svg')"></span>
       </span>
     </div>
     <div class="meta">
@@ -39,14 +40,14 @@ function hideBrokenImg(e: Event) {
         <span v-if="deadline != null" class="turn-tag">当前</span>
         {{ player.nickname }}
         <span v-if="player.isBot" class="bot-tag" title="电脑玩家"
-          ><span class="icon" style="--i: url('/images/icons/bot.svg')"></span>电脑</span
+          ><span class="icon" :style="iconStyle('/images/icons/bot.svg')"></span>电脑</span
         >
         <span v-if="player.delegated && !player.isBot" class="delegated-tag" title="托管中"
-          ><span class="icon" style="--i: url('/images/icons/delegate.svg')"></span>托管</span
+          ><span class="icon" :style="iconStyle('/images/icons/delegate.svg')"></span>托管</span
         >
         <span v-if="!player.online" class="offline">离线</span>
         <span v-if="!player.everPlayed && deadline != null" class="gd" title="本局尚未出过牌"
-          ><span class="icon" style="--i: url('/images/icons/glare.svg')"></span>瞪</span
+          ><span class="icon" :style="iconStyle('/images/icons/glare.svg')"></span>瞪</span
         >
       </div>
       <div class="backs">

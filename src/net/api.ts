@@ -1,8 +1,9 @@
 // REST 封装：登录/登出/当前用户；401 统一返回 null
+import { asset } from '../base.js'
 import type { UserPublic } from '../types.js'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(asset(path), {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   })

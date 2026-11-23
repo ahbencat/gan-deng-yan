@@ -3,6 +3,8 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // 子路径部署：BASE_PATH=/just_look/ npm run build（默认根路径）
+  base: process.env.BASE_PATH || '/',
   plugins: [vue()],
   server: {
     port: 5174,

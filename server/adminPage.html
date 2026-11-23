@@ -150,6 +150,8 @@
 
 <script>
 const $ = (id) => document.getElementById(id)
+// 子路径部署：页面在 /just_look/admin 时，接口前缀为 /just_look；根部署时为空
+const BASE = location.pathname.replace(/\/admin\/?$/, '')
 let bannerTimer = null
 
 function showLogin(msg) {
@@ -173,7 +175,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 
 async function api(path, opts) {
-  const res = await fetch(path, opts)
+  const res = await fetch(BASE + path, opts)
   let data = null
   try { data = await res.json() } catch { /* 非 JSON */ }
   if (res.status === 401) {
@@ -225,7 +227,7 @@ $('login-form').addEventListener('submit', async (e) => {
   $('login-error').textContent = ''
   $('login-btn').disabled = true
   try {
-    const res = await fetch('/api/admin/login', jsonOpts('POST', { password: $('password').value }))
+    const res = await fetch(BASE + '/api/admin/login', jsonOpts('POST', { password: $('password').value }))
     const data = await res.json().catch(() => null)
     if (!res.ok) {
       $('login-error').textContent = (data && data.error) || '登录失败'
@@ -279,7 +281,7 @@ $('refresh-btn').addEventListener('click', async () => {
 })
 
 $('logout-btn').addEventListener('click', async () => {
-  await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {})
+  await fetch(BASE + '/api/admin/logout', { method: 'POST' }).catch(() => {})
   showLogin()
 })
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { iconStyle } from './base.js'
 import { boot, clearError, store } from './store.js'
 import LoginView from './views/LoginView.vue'
 import LobbyView from './views/LobbyView.vue'
@@ -20,10 +21,10 @@ onMounted(() => {
     <GameView v-else />
 
     <div v-if="store.connection === 'reconnecting'" class="banner warn">
-      <span class="icon" style="--i: url('/images/icons/warn.svg')"></span>重连中…
+      <span class="icon" :style="iconStyle('/images/icons/warn.svg')"></span>重连中…
     </div>
     <div v-if="store.lastError" class="banner error" @click="clearError()">
-      <span class="icon" style="--i: url('/images/icons/error.svg')"></span>
+      <span class="icon" :style="iconStyle('/images/icons/error.svg')"></span>
       {{ store.lastError }}
     </div>
   </div>

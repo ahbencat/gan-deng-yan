@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { asset, iconStyle } from '../base.js'
 import { botLevelLabel, configSummary } from '../label.js'
 import { openFinalSummary, send, serverNow, store } from '../store.js'
 import ConfigForm from '../components/ConfigForm.vue'
@@ -176,21 +177,21 @@ function fmtMs(ms: number): string {
         <span class="seat">{{ p.seat + 1 }}号位</span>
         <img
           class="avatar-sm"
-          :src="p.isBot ? '/images/avatars/bot.png' : '/images/avatars/default.png'"
+          :src="asset(p.isBot ? '/images/avatars/bot.png' : '/images/avatars/default.png')"
           :alt="p.nickname"
           @error="hideBrokenImg"
         />
         <span class="name">
           {{ p.nickname }}
           <em v-if="p.userId === room.hostUserId" class="host-tag"
-            ><span class="icon" style="--i: url('/images/icons/host.svg')"></span>房主</em
+            ><span class="icon" :style="iconStyle('/images/icons/host.svg')"></span>房主</em
           >
           <em v-if="p.isBot" class="bot-tag"
-            ><span class="icon" style="--i: url('/images/icons/bot.svg')"></span
+            ><span class="icon" :style="iconStyle('/images/icons/bot.svg')"></span
             >电脑·{{ botLevelLabel(p.botLevel) }}</em
           >
           <em v-if="p.delegated && !p.isBot" class="delegated-tag"
-            ><span class="icon" style="--i: url('/images/icons/delegate.svg')"></span>托管</em
+            ><span class="icon" :style="iconStyle('/images/icons/delegate.svg')"></span>托管</em
           >
         </span>
         <span class="dot" :class="{ on: p.online }"></span>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { asset } from '../base.js'
 import { apiLogin } from '../net/api.js'
 import { connect, store } from '../store.js'
 
@@ -35,7 +36,7 @@ function hideBrokenImg(e: Event) {
 <template>
   <div class="login">
     <div class="card">
-      <img class="logo" src="/images/logo.png" alt="干瞪眼" @error="hideBrokenImg" />
+      <img class="logo" :src="asset('/images/logo.png')" alt="干瞪眼" @error="hideBrokenImg" />
       <h1>干瞪眼</h1>
       <p class="sub">登录后继续你的对局</p>
       <form @submit.prevent="submit()">

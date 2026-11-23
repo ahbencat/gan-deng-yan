@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { iconStyle } from '../base.js'
 import { declLabel, rankLabel } from '../label.js'
 import { serverNow } from '../store.js'
 import type { PublicTrickState, TrickLogEntry } from '../types.js'
@@ -74,7 +75,7 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
     <div class="topbar">
       <span class="stat">牌堆 <b>{{ pileCount }}</b> 张</span>
       <span class="stat" :class="{ hot: multiplier > 1 }"
-        ><span class="icon" style="--i: url('/images/icons/bomb.svg')"></span>倍率
+        ><span class="icon" :style="iconStyle('/images/icons/bomb.svg')"></span>倍率
         <b>×{{ multiplier }}</b></span
       >
       <span class="stat">本场剩余 <b>{{ totalText }}</b></span>
@@ -84,7 +85,7 @@ const sessionExpired = computed(() => tick.value >= props.endsAt)
         title="为本场追加时长"
         @click="emit('extend')"
       >
-        <span class="icon" style="--i: url('/images/icons/clock.svg')"></span>加时
+        <span class="icon" :style="iconStyle('/images/icons/clock.svg')"></span>加时
       </button>
       <span v-if="sessionExpired" class="stat expired">时间已到 · 等待本局结束</span>
       <span v-if="bombHistory.length" class="stat bombs">

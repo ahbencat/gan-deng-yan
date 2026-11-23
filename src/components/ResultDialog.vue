@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { asset, iconStyle } from '../base.js'
 import { dismissResult, send, store } from '../store.js'
 import type { GameResult, SessionSummary } from '../types.js'
 import CardView from './Card.vue'
@@ -62,8 +63,8 @@ const nextGameAt = computed(() => store.room?.nextGameAt ?? null)
 
 /** 总排名前 3 名奖牌（有色素材 → <img>，不用蒙版） */
 function medalSrc(rank: number): string {
-  if (rank === 1) return '/images/icons/trophy.svg'
-  return rank === 2 ? '/images/icons/medal-2.svg' : '/images/icons/medal-3.svg'
+  if (rank === 1) return asset('/images/icons/trophy.svg')
+  return asset(rank === 2 ? '/images/icons/medal-2.svg' : '/images/icons/medal-3.svg')
 }
 
 /** 插画/奖牌加载失败 → 隐藏，不影响布局 */
@@ -122,7 +123,7 @@ function hideBrokenImg(e: Event) {
         <img
           v-if="result.winnerSeat != null"
           class="victory-art"
-          src="/images/art/victory.png"
+          :src="asset('/images/art/victory.png')"
           alt=""
           @error="hideBrokenImg"
         />
@@ -148,14 +149,14 @@ function hideBrokenImg(e: Event) {
                   class="win"
                   title="获胜"
                 >
-                  <span class="icon" style="--i: url('/images/icons/win.svg')"></span>
+                  <span class="icon" :style="iconStyle('/images/icons/win.svg')"></span>
                 </em>
                 <em
                   v-if="!p.everPlayed"
                   class="gd"
                   title="整局未出牌（关瞪瞪），得分翻倍"
                 >
-                  <span class="icon" style="--i: url('/images/icons/glare.svg')"></span>
+                  <span class="icon" :style="iconStyle('/images/icons/glare.svg')"></span>
                 </em>
               </td>
               <td>{{ p.remaining }} 张</td>
