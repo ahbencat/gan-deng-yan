@@ -346,9 +346,9 @@ function sanitizeCardIds(raw: unknown): number[] | null {
   return ids
 }
 
-/** 电脑难度：缺省 1；仅接受整数 1|2|3；其余返回 null（调用方报 BAD_BOT_LEVEL） */
+/** 电脑难度：缺省 2（中级）；仅接受整数 1|2|3；其余返回 null（调用方报 BAD_BOT_LEVEL） */
 function sanitizeBotLevel(raw: unknown): BotLevel | null {
-  if (raw === undefined) return 1
+  if (raw === undefined) return 2
   if (raw === 1 || raw === 2 || raw === 3) return raw
   return null
 }

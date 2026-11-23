@@ -53,8 +53,8 @@ function leave(): void {
   send('room.leave', {})
 }
 
-/** 添加电脑的难度选择（1新手/2普通/3高手；缺省 1 = 行为保持） */
-const botLevel = ref<BotLevel>(1)
+/** 添加电脑的难度选择（1新手/2普通/3高手；默认 2 普通） */
+const botLevel = ref<BotLevel>(2)
 
 function addBot(): void {
   send('room.addBot', { level: botLevel.value })

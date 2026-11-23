@@ -26,7 +26,7 @@ export interface RoomPlayer {
   score: number
   /** 电脑玩家（服务器驱动出牌） */
   isBot: boolean
-  /** 电脑难度（内存态，addBot 时选定；重启回缺省 1 级；真人无此字段） */
+  /** 电脑难度（内存态，addBot 时选定；重启后丢失→回退花名册 basic；真人无此字段） */
   botLevel?: BotLevel
 }
 
