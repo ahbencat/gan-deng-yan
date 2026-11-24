@@ -1,6 +1,6 @@
 # 干瞪眼（look_at_it）
 
-局域网多人干瞪眼，**纯浏览器**：Node + Vue 实现，打开即玩、无需装客户端。登录制（账号由脚本/管理页写入，无自助注册），对局状态落库，刷新 / 重启 / 换机重连均可恢复。
+局域网多人干瞪眼，**纯浏览器**：Node + Vue 实现，打开即玩、无需装客户端。登录制（账号由 agent/管理页写入，无自助注册），对局状态落库，刷新 / 重启 / 换机重连均可恢复。
 
 ![对局桌面](docs/screenshot-game.png)
 
@@ -26,17 +26,14 @@
 
 ```bash
 npm install
-
-# 建账号（唯一建号入口，无注册接口）
-npm run user -- add <用户名> <密码> [昵称]
-
 npm run build          # 构建前端到 dist/
 npm start              # 单进程托管 dist/，默认 3002
 # 浏览器打开 http://localhost:3002
 ```
 
+- **账号增删交给 agent**：建号 / 改密 / 删除向 agent（如 Claude Code）说明即可——建号唯一入口 `npm run user`，**无自助注册**
 - 开发模式：`npm run dev:server`（tsx watch，`server/` 改动自动重启；改了 `src/` 仍需 `npm run build` 再刷新）
-- 部署同理：`npm ci && npm run build && PORT=<端口> npm start`，健康检查 `GET /api/health`
+- **部署交给 agent**：向 agent 说明目标机器与端口，同步、构建、启动与健康检查（`GET /api/health`）由它完成；本仓库不维护手工部署手册
 - 测试：`npm test`（157 用例：规则 / 状态机 / 快照隐私 / fuzz / 记牌 / 2·3 级大脑）；类型检查 `npm run typecheck`
 
 ## 电脑与难度
