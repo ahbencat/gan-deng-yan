@@ -2,6 +2,7 @@
 import type { WebSocket } from 'ws'
 import { WS_ENVELOPE_VERSION, type BotLevel, type Decl, type Envelope } from '../../src/types.js'
 import { extendSession, startGame } from '../gameSession.js'
+import { logDelegate, logExtend } from '../gameLog.js'
 import { pushLobby, pushRoomState } from '../notify.js'
 import { rooms, sanitizeConfig } from '../roomManager.js'
 import { getUserById, toPublic } from '../users.js'
@@ -285,6 +286,7 @@ function route(ws: WebSocket, userId: number, type: string, payload: Payload, se
       }
       if (delegated) room.delegated.add(userId)
       else room.delegated.delete(userId)
+      logDelegate(room, userId, delegated)
       if (room.session) room.session.refresh()
       pushRoomState(room)
       return
@@ -309,6 +311,7 @@ function route(ws: WebSocket, userId: number, type: string, payload: Payload, se
         sendError(ws, 'EXTEND_FAILED', r.error, seq)
         return
       }
+      logExtend(room, minutes)
       return
     }
     default:

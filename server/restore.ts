@@ -4,6 +4,7 @@
 import { applyAutoMove, applyTimeout, normalizeSeenRanks } from '../src/game/engine.js'
 import { STATE_VERSION, type GameState } from '../src/types.js'
 import { db } from './db.js'
+import { logGameEnd, logMove } from './gameLog.js'
 import {
   afterGameRecorded,
   armSessionExpiry,
@@ -148,9 +149,16 @@ export function restoreAll(): void {
       if (r.ok) {
         state = r.state
         db.prepare('UPDATE games SET state_json = ? WHERE id = ?').run(JSON.stringify(state), g.id)
+        logMove(room, g.id, state, isBotTurn ? 'bot' : 'timeout')
         // 补的这一步可能直接终局（如领出逃生/出完）
         if (state.phase === 'finished' && state.result) {
           recordGameResult({ gameId: g.id, roomId: g.room_id, result: state.result, finishedAt: now })
+          logGameEnd(
+            room,
+            g.id,
+            state,
+            state.hands.map((cards, seat) => ({ seat, cards })),
+          )
           rooms.finishGame(g.room_id, state.result)
           afterGameRecorded(room)
           continue

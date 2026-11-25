@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { asset, iconStyle } from '../base.js'
+import { rankLabel } from '../label.js'
 import { dismissResult, send, store } from '../store.js'
 import type { GameResult, SessionSummary } from '../types.js'
 import CardView from './Card.vue'
@@ -14,6 +15,9 @@ const props = defineProps<{
 }>()
 
 const players = computed(() => store.game?.public.players ?? [])
+
+/** 本盘出现过的炸弹（结算框展示；final 模式无 game 快照则为空） */
+const bombs = computed(() => store.game?.public.bombHistory ?? [])
 
 /** 结算时的房主决定（同 GameView canExtend 判定） */
 const isHost = computed(() => store.user?.id === store.room?.hostUserId)
@@ -130,6 +134,14 @@ function hideBrokenImg(e: Event) {
         <h2>{{ headline }}</h2>
         <p class="multi">炸弹累计倍率 <b>×{{ result.multiplier }}</b></p>
 
+        <!-- 本盘所有炸弹（无炸弹时整行隐藏） -->
+        <div v-if="bombs.length" class="bombs">
+          <span class="bombs-label">本盘炸弹</span>
+          <span v-for="(b, i) in [...bombs].reverse()" :key="i" class="bomb-chip">
+            {{ name(b.seat) }}·{{ rankLabel(b.rank) }}×{{ b.n }}
+          </span>
+        </div>
+
         <ShuffleCountdown v-if="nextGameAt != null" :deadline="nextGameAt" />
 
         <table>
@@ -226,6 +238,27 @@ h2 {
 }
 .multi b {
   color: #e65100;
+}
+/* 本盘炸弹：居中 chips（弹窗自身可滚动，不受桌面无跳变约束） */
+.bombs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: -8px 0 16px;
+}
+.bombs-label {
+  color: #888;
+  font-size: 13px;
+}
+.bomb-chip {
+  background: #fff3e0;
+  color: #e65100;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .no-games {
   text-align: center;

@@ -18,6 +18,7 @@ import {
 import { mulberry32, systemSeed } from '../src/game/rng.js'
 import { projectPublic, projectSnapshot } from '../src/game/snapshot.js'
 import { db, tx } from './db.js'
+import { logGameEnd, logGameStart, logMove } from './gameLog.js'
 import { pushLobby, pushRoomState } from './notify.js'
 import { brainForSeat } from './npc.js'
 import { rooms, type Room } from './roomManager.js'
@@ -349,6 +350,7 @@ export class GameSession {
     const r = applyPlay(this.state, seat, cardIds, decl, Date.now())
     if (!r.ok) return { ok: false, error: r.error, seq }
     this.commit(r.state)
+    this.logAct(r.state, 'manual')
     if (r.state.phase === 'finished') this.finish()
     return { ok: true }
   }
@@ -362,6 +364,7 @@ export class GameSession {
     const r = applyPass(this.state, seat, Date.now())
     if (!r.ok) return { ok: false, error: r.error, seq }
     this.commit(r.state)
+    this.logAct(r.state, 'manual')
     if (r.state.phase === 'finished') this.finish()
     return { ok: true }
   }
@@ -419,6 +422,12 @@ export class GameSession {
     this.clearTimer()
   }
 
+  /** 本步动作（含尾部补牌）写对局日志；房间已不存在时静默跳过 */
+  private logAct(state: GameState, by: 'manual' | 'bot' | 'delegate' | 'timeout'): void {
+    const room = rooms.get(this.roomId)
+    if (room) logMove(room, this.gameId, state, by)
+  }
+
   private clearTimer(): void {
     if (this.timer) {
       clearTimeout(this.timer)
@@ -434,13 +443,11 @@ export class GameSession {
     // auto 分支必须先于 deadline 判断：700ms 定时器永远早于 deadline 唤醒
     if (this.autoSeatSet().has(this.state.trick.turnSeat)) {
       const turnUserId = this.state.seats[this.state.trick.turnSeat]?.userId
-      const r = applyAutoMove(
-        this.state,
-        now,
-        brainForSeat(rooms.get(this.roomId)?.players.get(turnUserId ?? -1)),
-      )
+      const turnPlayer = rooms.get(this.roomId)?.players.get(turnUserId ?? -1)
+      const r = applyAutoMove(this.state, now, brainForSeat(turnPlayer))
       if (r.ok) {
         this.commit(r.state)
+        this.logAct(r.state, turnPlayer?.isBot ? 'bot' : 'delegate')
         if (r.state.phase === 'finished') this.finish()
       } else {
         this.armTimer() // 意外失败时重挂，避免卡死
@@ -452,6 +459,7 @@ export class GameSession {
       const r = applyTimeout(this.state, now)
       if (r.ok) {
         this.commit(r.state)
+        this.logAct(r.state, 'timeout')
         if (r.state.phase === 'finished') this.finish()
       } else {
         this.armTimer() // 意外失败时重挂，避免卡死
@@ -502,6 +510,13 @@ export class GameSession {
     const memberIds = room ? rooms.memberIds(room) : []
 
     recordGameResult({ gameId: this.gameId, roomId: this.roomId, result, finishedAt: now })
+    if (room)
+      logGameEnd(
+        room,
+        this.gameId,
+        this.state,
+        this.state.hands.map((cards, seat) => ({ seat, cards })),
+      )
     rooms.finishGame(this.roomId, result)
 
     // 全员亮牌（先让客户端看到上局结果，再切最终排名/局间状态）
@@ -592,6 +607,7 @@ export function startGame(room: Room): { ok: true; session: GameSession } | { ok
   const gameId = Number(res.lastInsertRowid)
   state.gameId = gameId
   db.prepare('UPDATE games SET state_json = ? WHERE id = ?').run(JSON.stringify(state), gameId)
+  logGameStart(room, state, gameId)
 
   rooms.markPlaying(room.id)
   const session = new GameSession(gameId, room.id, state)
