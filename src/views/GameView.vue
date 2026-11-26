@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { enumerateDeclarations } from '../game/combo.js'
 import { canBeat } from '../game/rules.js'
 import { useIsMobile, useIsShort } from '../media.js'
-import { dismissResult, send, store } from '../store.js'
+import { send, store } from '../store.js'
 import { RANK_MIN, isWild, type Decl } from '../types.js'
 import DeclDialog from '../components/DeclDialog.vue'
 import ExtendDialog from '../components/ExtendDialog.vue'
@@ -31,8 +31,6 @@ const RING_H = 40
 /** 中央出牌面板近似半宽/半高（TrickArea：560 宽，topbar44+scores36+stage190+log94+3×gap10≈394 高） */
 const TRICK_HALF_W = 280
 const TRICK_HALF_H = 197
-/** 每局结算弹窗自动收起延时（局间 8s：先看 4s 结算，再露出桌面中央洗牌） */
-const RESULT_COLLAPSE_MS = 4000
 
 const gameEl = ref<HTMLElement | null>(null)
 const bottomEl = ref<HTMLElement | null>(null)
@@ -257,48 +255,31 @@ const shuffleStyle = computed(() => ({
   top: `${shufflePos.value.y}px`,
 }))
 
-const showResult = ref(true)
-let collapseTimer: ReturnType<typeof setTimeout> | null = null
+/** 弹窗可见：盘结算 / 本场总排名任一在场即显示。盘结算不自动收起——
+ *  对齐 8s 局间洗牌，由下一局 game.state 清除 result 关闭；局末由下方 defer 切总排名 */
+const resultDialogVisible = computed(() => store.result != null || store.finalSummary != null)
 
-/** 弹窗可见：最终排名与用户手动打开时恒显示；每局结算到点自动收起（留在牌桌看洗牌） */
-const resultDialogVisible = computed(
-  () => (store.result != null || store.finalSummary != null) && showResult.value,
-)
-/** 已自动收起但本局结果还在 → 右上角悬浮条可重开/回房间 */
-const resultCollapsed = computed(
-  () => store.result != null && store.finalSummary == null && !showResult.value,
-)
-
-function armAutoCollapse(): void {
-  if (collapseTimer) {
-    clearTimeout(collapseTimer)
-    collapseTimer = null
-  }
-  if (store.result && !store.finalSummary && store.room?.nextGameAt != null) {
-    collapseTimer = setTimeout(() => {
-      collapseTimer = null
-      showResult.value = false
-    }, RESULT_COLLAPSE_MS)
-  }
-}
-watch(
-  () => store.result,
-  () => {
-    showResult.value = true
-    armAutoCollapse()
-  },
-)
-watch(() => store.room?.nextGameAt, armAutoCollapse)
+/** 局末：盘结算先完整展示（对齐 8s 局间时长），到点再切本场总排名 */
+const FINAL_DEFER_MS = 8000
+const finalPending = ref(false)
+let finalTimer: ReturnType<typeof setTimeout> | null = null
 watch(
   () => store.finalSummary,
-  (s) => {
-    if (!s) return
-    // 最终排名永不自动收起
-    if (collapseTimer) {
-      clearTimeout(collapseTimer)
-      collapseTimer = null
+  (fs) => {
+    if (finalTimer) {
+      clearTimeout(finalTimer)
+      finalTimer = null
     }
-    showResult.value = true
+    // 无盘结算在场（等待态回看/重连）→ 总排名立即显示；否则盘结算先行
+    if (!fs || !store.result) {
+      finalPending.value = false
+      return
+    }
+    finalPending.value = true
+    finalTimer = setTimeout(() => {
+      finalTimer = null
+      finalPending.value = false
+    }, FINAL_DEFER_MS)
   },
 )
 
@@ -326,7 +307,7 @@ watch(
 onUnmounted(() => {
   ro?.disconnect()
   ro = null
-  if (collapseTimer) clearTimeout(collapseTimer)
+  if (finalTimer) clearTimeout(finalTimer)
 })
 </script>
 
@@ -406,13 +387,8 @@ onUnmounted(() => {
       v-if="resultDialogVisible"
       :result="store.result"
       :hands="store.allHands ?? []"
-      :summary="store.finalSummary"
+      :summary="finalPending ? null : store.finalSummary"
     />
-    <!-- 每局结算自动收起后的悬浮条：可重开查看或回房间 -->
-    <div v-if="resultCollapsed" class="result-chip">
-      <button @click="showResult = true">查看本局结果</button>
-      <button @click="dismissResult()">返回房间</button>
-    </div>
   </div>
   <div v-else class="syncing">同步对局中…</div>
 </template>
@@ -476,28 +452,6 @@ onUnmounted(() => {
   border-radius: 14px;
   padding: 10px 22px;
   box-shadow: 0 6px 24px rgb(0 0 0 / 35%);
-}
-/* 结算弹窗自动收起后的悬浮操作条 */
-.result-chip {
-  position: fixed;
-  right: 14px;
-  top: 14px;
-  z-index: 250;
-  display: flex;
-  gap: 8px;
-}
-.result-chip button {
-  padding: 7px 14px;
-  border: none;
-  border-radius: 8px;
-  background: #4a90d9;
-  color: #fff;
-  font-size: 13px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.result-chip button:hover {
-  background: #3a7bc0;
 }
 .bottom {
   background: rgb(0 0 0 / 30%);
