@@ -1,6 +1,7 @@
 // 3 级大脑（expert）：smart 策略 + 记牌推算修正
 // E1 领出选未现压牌最少的候选（并列保持 smart 序）；E2 顶张（beatRisk=0）优先甩
 // E3 拦截/竞跑压牌选暴露后最难被反压的打法；E4 竞跑遇炸弹风险时顺/连对降级
+// 结构性关门候选优先，且在候选内按 beatRisk 挑（比 smart 的 cost 序更安全）
 // 无信息（seenRanks 全 0 且计数无区分度）时与 smart 同序退化
 import type { Decl } from '../../types.js'
 import type { BotBrain } from '../brain.js'
@@ -9,6 +10,7 @@ import { bombRisk, beatRisk, unseenByRank } from './counting.js'
 import { leadPlan, followPlan } from './smart.js'
 import {
   aggressiveBeats,
+  closersOf,
   finisher,
   interceptOrRace,
   threat,
@@ -59,15 +61,23 @@ export const expertBrain: BotBrain = {
     }
 
     // ---- 跟牌 ----
-    // E3：拦截/竞跑 → 全压法（炸弹按纪律）选 beatRisk 最小；并列保持 cost 序
-    if (interceptOrRace(ctx, th, ctx.prev)) {
-      const beats = aggressiveBeats(enumerateBeats(ctx.hand, ctx.prev), ctx, th)
-      if (beats.length === 0) return null
-      const best = pickMinRisk(beats, risk)
+    const aggressive = aggressiveBeats(enumerateBeats(ctx.hand, ctx.prev), ctx, th)
+
+    // 结构性关门与 smart 同步，但关门候选里按 beatRisk 挑（越难被反压越安全）
+    const closers = closersOf(ctx, aggressive)
+    if (closers.length > 0) {
+      const best = pickMinRisk(closers, risk)
       return { cards: best.cards, decl: best.decl }
     }
 
-    // 常规跟牌：与 smart 一致（干净最小压牌 / 过）
+    // E3：拦截/竞跑 → 全压法（炸弹按纪律）选 beatRisk 最小；并列保持 cost 序
+    if (interceptOrRace(ctx, th, ctx.prev)) {
+      if (aggressive.length === 0) return null
+      const best = pickMinRisk(aggressive, risk)
+      return { cards: best.cards, decl: best.decl }
+    }
+
+    // 常规跟牌：与 smart 一致（干净最小压牌 / 关瞪瞪止损 / 过）
     const pick = followPlan(ctx, fin)
     return pick ? { cards: pick.cards, decl: pick.decl } : null
   },

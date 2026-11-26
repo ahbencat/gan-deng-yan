@@ -19,6 +19,7 @@ describe('BotBrain 抽象', () => {
         seat: 0,
         wildCount: 2,
         seenRanks: emptyRankTally(),
+        everPlayed: true,
       }),
     ).toEqual(pickAutoPlay(leadHand))
 
@@ -34,6 +35,7 @@ describe('BotBrain 抽象', () => {
         seat: 0,
         wildCount: 2,
         seenRanks: emptyRankTally(),
+        everPlayed: true,
       }),
     ).toEqual(pickBeatingPlay(followHand, prev))
   })

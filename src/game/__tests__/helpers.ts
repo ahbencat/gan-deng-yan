@@ -59,6 +59,8 @@ export function ctxOf(
     seat?: number
     seenRanks?: number[]
     wildCount?: number
+    /** 默认已出过牌；测关瞪瞪止损时显式传 false */
+    everPlayed?: boolean
   } = {},
 ): BotContext {
   return {
@@ -70,6 +72,7 @@ export function ctxOf(
     seat: opts.seat ?? 0,
     wildCount: opts.wildCount ?? 2,
     seenRanks: opts.seenRanks ?? emptyRankTally(),
+    everPlayed: opts.everPlayed ?? true,
   }
 }
 

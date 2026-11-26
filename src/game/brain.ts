@@ -27,6 +27,8 @@ export interface BotContext {
   wildCount: number
   /** 公开已打出牌按物理点数计数（下标=rank，3..17） */
   seenRanks: number[]
+  /** 自己是否已出过牌（false = 关瞪瞪风险，结算罚分 ×2） */
+  everPlayed: boolean
 }
 
 export interface BotBrain {
@@ -46,6 +48,7 @@ export function buildBrainContext(state: GameState, seat: number): BotContext {
     seat,
     wildCount: state.config.wildCount,
     seenRanks: state.seenRanks,
+    everPlayed: state.everPlayed[seat],
   }
 }
 
