@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目
 
-干瞪眼（look_at_it）：局域网多人纯浏览器扑克，中文 UI，登录制（**注册关闭**，账号由脚本写入），对局状态落库、刷新/重启可恢复。玩法规则、素材规格（`docs/ASSETS.md`）、通用部署说明在 `README.md`（面向 GitHub，不含本机运维细节）；本文件补内部口径；最初需求原文在 `look_look.txt`。
+干瞪眼（look_at_it）：局域网多人纯浏览器扑克，中文 UI，登录制（**注册关闭**，账号由脚本写入），对局状态落库、刷新/重启可恢复。玩法规则、素材规格（`docs/ASSETS.md`）、通用部署说明在 `README.md`（面向 GitHub，不含本机运维细节；含「渊源与规则出处」一节，注明本仓库规则是**本地规则**、非标准规则），英文版 `README.en.md` 与之逐节对应 —— **改玩法条目或渊源必须同步两份文件**；本文件补内部口径；最初需求原文在 `look_look.txt`。
 
 ## 常用命令
 
