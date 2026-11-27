@@ -1,23 +1,60 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { asset, iconStyle } from '../base.js'
-import { rankLabel } from '../label.js'
+import { declLabel, rankLabel } from '../label.js'
 import { dismissResult, send, store } from '../store.js'
-import type { GameResult, SessionSummary } from '../types.js'
+import { INTERMISSION_MS, type GameResult, type SessionSummary } from '../types.js'
 import CardView from './Card.vue'
 import ShuffleCountdown from './ShuffleCountdown.vue'
 
 const props = defineProps<{
-  /** 单局结果；summary 非空时为最终结算模式 */
+  /** 单局结果；summary 在场时为最终结算模式（局末见下方 defer） */
   result: GameResult | null
   hands: { seat: number; cards: { id: number; rank: number; suit: number }[] }[]
   summary: SessionSummary | null
 }>()
 
+/**
+ * 展示模式：summary 在场即「本场总排名」，但局末 game.over 与 session.final 同时到达时，
+ * 盘结算要先完整展示一个局间时长（与自动开局同源 INTERMISSION_MS）再切排名。
+ * 房间页回看（result 为空）不延迟。计时器在场 == 总排名待显示。
+ */
+const deferTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+function clearDefer(): void {
+  if (deferTimer.value) clearTimeout(deferTimer.value)
+  deferTimer.value = null
+}
+watch(
+  () => props.summary,
+  (fs) => {
+    clearDefer()
+    if (fs && props.result) deferTimer.value = setTimeout(clearDefer, INTERMISSION_MS)
+  },
+  { immediate: true }, // 两条消息同批到达时，挂载即已有 summary，不能再等变化
+)
+onUnmounted(clearDefer)
+
+const isFinal = computed(() => props.summary != null && deferTimer.value == null)
+
 const players = computed(() => store.game?.public.players ?? [])
 
 /** 本盘出现过的炸弹（结算框展示；final 模式无 game 快照则为空） */
 const bombs = computed(() => store.game?.public.bombHistory ?? [])
+
+/**
+ * 赢家最后一手：终局快照 trick.log 尾部该座位的 play 条目
+ * （log 只裁头部、尾部安全；game.over 不清 store.game，快照存活；流局/无记录隐藏）
+ */
+const winningPlay = computed(() => {
+  const r = props.result
+  if (isFinal.value || r?.winnerSeat == null) return null
+  const log = store.game?.public.trick.log ?? []
+  for (let i = log.length - 1; i >= 0; i--) {
+    const e = log[i]
+    if (e.kind === 'play' && e.seat === r.winnerSeat) return e
+  }
+  return null
+})
 
 /** 结算时的房主决定（同 GameView canExtend 判定） */
 const isHost = computed(() => store.user?.id === store.room?.hostUserId)
@@ -47,10 +84,8 @@ function name(seat: number): string {
   return players.value.find((p) => p.seat === seat)?.nickname ?? `P${seat + 1}`
 }
 
-const isFinal = computed(() => props.summary != null)
-
 const headline = computed(() => {
-  if (props.summary) return '本场结束 · 总排名'
+  if (isFinal.value) return '本场结束 · 总排名'
   if (!props.result) return ''
   if (props.result.reason === 'draw' || props.result.winnerSeat == null) {
     return '流局（剩牌并列最少）'
@@ -80,7 +115,7 @@ function hideBrokenImg(e: Event) {
 <template>
   <div class="modal">
     <div class="dialog">
-      <!-- 最终结算：本场累计总分排名 -->
+      <!-- 最终结算：本场累计总分排名（局末 defer 期间 isFinal 为 false → 先走盘结算） -->
       <template v-if="isFinal && summary">
         <h2>{{ headline }}</h2>
         <p class="multi">共 {{ summary.gameCount }} 局 · 本场累计得分</p>
@@ -133,6 +168,15 @@ function hideBrokenImg(e: Event) {
         />
         <h2>{{ headline }}</h2>
         <p class="multi">炸弹累计倍率 <b>×{{ result.multiplier }}</b></p>
+
+        <!-- 赢家最后一手（无出牌记录则整行隐藏）：与炸弹行同版式，pill 用蓝色标示牌型 -->
+        <div v-if="winningPlay" class="last-play">
+          <span class="last-play-label">最后一手 · {{ name(winningPlay.seat) }}</span>
+          <span class="decl-chip">{{ declLabel(winningPlay.decl) }}</span>
+          <div class="cards">
+            <CardView v-for="c in winningPlay.cards" :key="c.id" :card="c" small />
+          </div>
+        </div>
 
         <!-- 本盘所有炸弹（无炸弹时整行隐藏） -->
         <div v-if="bombs.length" class="bombs">
@@ -239,8 +283,10 @@ h2 {
 .multi b {
   color: #e65100;
 }
-/* 本盘炸弹：居中 chips（弹窗自身可滚动，不受桌面无跳变约束） */
-.bombs {
+/* 结算框的居中信息行（本盘炸弹 / 赢家最后一手）：共用版式，pill 配色区分牌型与炸弹
+   （弹窗自身可滚动，不受桌面无跳变约束） */
+.bombs,
+.last-play {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -248,17 +294,25 @@ h2 {
   gap: 6px;
   margin: -8px 0 16px;
 }
-.bombs-label {
+.bombs-label,
+.last-play-label {
   color: #888;
   font-size: 13px;
 }
-.bomb-chip {
-  background: #fff3e0;
-  color: #e65100;
+.bomb-chip,
+.decl-chip {
   border-radius: 999px;
   padding: 2px 10px;
   font-size: 12px;
   white-space: nowrap;
+}
+.bomb-chip {
+  background: #fff3e0;
+  color: #e65100;
+}
+.decl-chip {
+  background: #e3f2fd;
+  color: #1565c0;
 }
 .no-games {
   text-align: center;

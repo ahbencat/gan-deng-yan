@@ -1,12 +1,13 @@
 // 对局运行时：引擎状态 + 双定时器（回合/本场到点）+ 每动作落库 + 广播 + 结算
-import type {
-  Decl,
-  GameSnapshot,
-  GameState,
-  PublicGameState,
-  SeatMeta,
-  SessionRankRow,
-  SessionSummary,
+import {
+  INTERMISSION_MS,
+  type Decl,
+  type GameSnapshot,
+  type GameState,
+  type PublicGameState,
+  type SeatMeta,
+  type SessionRankRow,
+  type SessionSummary,
 } from '../src/types.js'
 import {
   applyAutoMove,
@@ -29,8 +30,6 @@ import { hub } from './ws/hub.js'
 const GRACE_MS = 1000
 /** 电脑/托管座位的自动落子延迟 */
 const AUTO_MOVE_DELAY_MS = 700
-/** 局间自动开局的间隔（展示结算/洗牌动画的时间） */
-export const INTERMISSION_MS = 8000
 
 function clearNextGame(room: Room): void {
   if (room.nextGameTimer) {

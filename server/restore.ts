@@ -2,7 +2,7 @@
 // 本场到点不强制结算进行中的对局（等自然结束）；版本门禁失败的对局作废不计分。
 // 玩家 WS 连上即由 dispatch 的 session 恢复。
 import { applyAutoMove, applyTimeout, normalizeSeenRanks } from '../src/game/engine.js'
-import { STATE_VERSION, type GameState } from '../src/types.js'
+import { INTERMISSION_MS, STATE_VERSION, type GameState } from '../src/types.js'
 import { db } from './db.js'
 import { logGameEnd, logMove } from './gameLog.js'
 import {
@@ -10,7 +10,6 @@ import {
   armSessionExpiry,
   finalizeSession,
   GameSession,
-  INTERMISSION_MS,
   scheduleNextGame,
   startGame,
 } from './gameSession.js'

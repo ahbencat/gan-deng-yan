@@ -84,6 +84,9 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   gameMinutes: 10,
 }
 
+/** 局间间隔：洗牌动画 + 盘结算展示时长（服务端据此自动开局，前端据此延后切总排名） */
+export const INTERMISSION_MS = 8000
+
 // ---- 对局状态（整体持久化进 games.state_json） ----
 export const STATE_VERSION = 1
 

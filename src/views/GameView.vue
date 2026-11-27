@@ -247,7 +247,7 @@ function opponentDeadline(seat: number): number | null {
   return pub.value.trick.turnDeadline
 }
 
-// ---- 局间：桌面中央洗牌 + 结算弹窗自动收起 ----
+// ---- 局间：桌面中央洗牌 + 结算弹窗 ----
 const intermission = computed(() => store.room?.nextGameAt != null)
 const shuffleDeadline = computed(() => store.room?.nextGameAt ?? null)
 const shuffleStyle = computed(() => ({
@@ -256,32 +256,8 @@ const shuffleStyle = computed(() => ({
 }))
 
 /** 弹窗可见：盘结算 / 本场总排名任一在场即显示。盘结算不自动收起——
- *  对齐 8s 局间洗牌，由下一局 game.state 清除 result 关闭；局末由下方 defer 切总排名 */
+ *  对齐局间洗牌，由下一局 game.state 清除 result 关闭；局末切总排名的延迟在 ResultDialog 内部 */
 const resultDialogVisible = computed(() => store.result != null || store.finalSummary != null)
-
-/** 局末：盘结算先完整展示（对齐 8s 局间时长），到点再切本场总排名 */
-const FINAL_DEFER_MS = 8000
-const finalPending = ref(false)
-let finalTimer: ReturnType<typeof setTimeout> | null = null
-watch(
-  () => store.finalSummary,
-  (fs) => {
-    if (finalTimer) {
-      clearTimeout(finalTimer)
-      finalTimer = null
-    }
-    // 无盘结算在场（等待态回看/重连）→ 总排名立即显示；否则盘结算先行
-    if (!fs || !store.result) {
-      finalPending.value = false
-      return
-    }
-    finalPending.value = true
-    finalTimer = setTimeout(() => {
-      finalTimer = null
-      finalPending.value = false
-    }, FINAL_DEFER_MS)
-  },
-)
 
 // 快照缺座位时兜底拉一次全量
 onMounted(() => {
@@ -307,7 +283,6 @@ watch(
 onUnmounted(() => {
   ro?.disconnect()
   ro = null
-  if (finalTimer) clearTimeout(finalTimer)
 })
 </script>
 
@@ -337,7 +312,7 @@ onUnmounted(() => {
       />
     </div>
 
-    <!-- 局间洗牌：桌面中央（结算弹窗收起后可见；房间界面不再洗牌） -->
+    <!-- 局间洗牌：桌面中央（弹窗后方常驻渲染；房间界面只留文字倒计时） -->
     <div v-if="intermission && shuffleDeadline" class="center-shuffle" :style="shuffleStyle">
       <div class="shuffle-panel">
         <ShuffleCountdown :deadline="shuffleDeadline" />
@@ -387,7 +362,7 @@ onUnmounted(() => {
       v-if="resultDialogVisible"
       :result="store.result"
       :hands="store.allHands ?? []"
-      :summary="finalPending ? null : store.finalSummary"
+      :summary="store.finalSummary"
     />
   </div>
   <div v-else class="syncing">同步对局中…</div>
